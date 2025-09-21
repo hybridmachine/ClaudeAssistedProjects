@@ -1,0 +1,25 @@
+{
+  "name": "gameoflife3d",
+  "version": "1.0.0",
+  "description": "A 3D visualization of Conway's Game of Life",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "dev": "npm run build && npm run serve",
+    "serve": "npx http-server . -p 8080 -o",
+    "clean": "rimraf dist"
+  },
+  "keywords": ["game-of-life", "3d", "webgl", "threejs", "typescript"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.156.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.156.0",
+    "typescript": "^5.2.2",
+    "http-server": "^14.1.1",
+    "rimraf": "^5.0.5"
+  }
+}
