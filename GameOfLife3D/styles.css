@@ -39,7 +39,8 @@ body {
 }
 
 .controls-panel.collapsed {
-    transform: translateX(280px);
+    width: 500px;
+    transform: translateX(-200px);
 }
 
 .toggle-btn {
