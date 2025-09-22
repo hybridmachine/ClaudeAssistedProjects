@@ -7,6 +7,7 @@ export class CameraController {
         this.rotateSpeed = 0.01;
         this.zoomSpeed = 2;
         this.moveSpeed = 0.5;
+        this.orbitSpeed = 0.02;
         this.keys = {
             w: false,
             a: false,
@@ -16,6 +17,8 @@ export class CameraController {
             e: false,
             r: false,
             f: false,
+            o: false,
+            p: false,
             arrowUp: false,
             arrowDown: false,
             arrowLeft: false,
@@ -80,6 +83,12 @@ export class CameraController {
             case 'KeyF':
                 this.keys.f = true;
                 break;
+            case 'KeyO':
+                this.keys.o = true;
+                break;
+            case 'KeyP':
+                this.keys.p = true;
+                break;
         }
         event.preventDefault();
     }
@@ -118,6 +127,12 @@ export class CameraController {
                 break;
             case 'KeyF':
                 this.keys.f = false;
+                break;
+            case 'KeyO':
+                this.keys.o = false;
+                break;
+            case 'KeyP':
+                this.keys.p = false;
                 break;
         }
         event.preventDefault();
@@ -206,6 +221,13 @@ export class CameraController {
             this.spherical.theta += this.rotateSpeed * 2;
             this.updateCameraPosition();
         }
+        // Z-axis orbit (camera orbits around Z while always looking at center)
+        if (this.keys.o) {
+            this.orbitAroundZ(-this.orbitSpeed);
+        }
+        if (this.keys.p) {
+            this.orbitAroundZ(this.orbitSpeed);
+        }
         if (moveVector.length() > 0) {
             moveVector.normalize().multiplyScalar(this.moveSpeed);
             this.target.add(moveVector);
@@ -218,6 +240,26 @@ export class CameraController {
         position.add(this.target);
         this.camera.position.copy(position);
         this.camera.lookAt(this.target);
+    }
+    orbitAroundZ(angle) {
+        // Calculate current position relative to target
+        const relativePosition = new THREE.Vector3();
+        relativePosition.copy(this.camera.position).sub(this.target);
+        // Create rotation matrix around Z-axis
+        const rotationMatrix = new THREE.Matrix4();
+        rotationMatrix.makeRotationZ(angle);
+        // Apply rotation to the relative position
+        relativePosition.applyMatrix4(rotationMatrix);
+        // Set new camera position
+        this.camera.position.copy(this.target).add(relativePosition);
+        // Always look at the target (center of the model)
+        this.camera.lookAt(this.target);
+        // Update spherical coordinates to match new position
+        const sphericalPos = new THREE.Spherical();
+        sphericalPos.setFromVector3(relativePosition);
+        this.spherical.theta = sphericalPos.theta;
+        this.spherical.phi = sphericalPos.phi;
+        this.spherical.radius = sphericalPos.radius;
     }
     reset() {
         this.target.set(0, 0, 25);

@@ -4,6 +4,10 @@ import { Generation } from './GameEngine.js';
 export interface RenderSettings {
     cellPadding: number;
     cellColor: string;
+    gradientStartColor?: string;
+    gradientEndColor?: string;
+    edgeColor?: string;
+    edgeWidth?: number;
     showGridLines: boolean;
     showGenerationLabels: boolean;
 }
@@ -13,6 +17,7 @@ export class Renderer3D {
     private camera!: THREE.PerspectiveCamera;
     private renderer!: THREE.WebGLRenderer;
     private instancedMesh: THREE.InstancedMesh | null = null;
+    private wireframeMesh: THREE.InstancedMesh | null = null;
     private gridLines: THREE.LineSegments | null = null;
     private starField: THREE.Points | null = null;
     private generationLabels: THREE.Sprite[] = [];
@@ -20,6 +25,10 @@ export class Renderer3D {
     private gridSize: number = 50;
     private cellPadding: number = 0.2;
     private cellColor: string = '#00ff88';
+    private gradientStartColor: string = '#ff0080';
+    private gradientEndColor: string = '#00ff88';
+    private edgeColor: string = '#ffffff';
+    private edgeWidth: number = 0.05;
     private showGridLines: boolean = true;
     private showGenerationLabels: boolean = true;
 
@@ -117,6 +126,22 @@ export class Renderer3D {
             this.cellColor = settings.cellColor;
             this.updateCellColor();
         }
+        if (settings.gradientStartColor !== undefined) {
+            this.gradientStartColor = settings.gradientStartColor;
+            this.updateCellColor();
+        }
+        if (settings.gradientEndColor !== undefined) {
+            this.gradientEndColor = settings.gradientEndColor;
+            this.updateCellColor();
+        }
+        if (settings.edgeColor !== undefined) {
+            this.edgeColor = settings.edgeColor;
+            this.updateCellColor();
+        }
+        if (settings.edgeWidth !== undefined) {
+            this.edgeWidth = settings.edgeWidth;
+            this.updateCellColor();
+        }
         if (settings.showGridLines !== undefined) {
             this.showGridLines = settings.showGridLines;
             this.updateGridLines();
@@ -132,11 +157,51 @@ export class Renderer3D {
             this.scene.remove(this.instancedMesh);
             this.instancedMesh.dispose();
         }
+        if (this.wireframeMesh) {
+            this.scene.remove(this.wireframeMesh);
+            this.wireframeMesh.dispose();
+        }
 
         const cellSize = 1 - this.cellPadding;
         const geometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
-        const material = new THREE.MeshLambertMaterial({
-            color: new THREE.Color(this.cellColor)
+
+        // Create solid mesh with gradient material
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                startColor: { value: new THREE.Color(this.gradientStartColor) },
+                endColor: { value: new THREE.Color(this.gradientEndColor) },
+                minZ: { value: 0.0 },
+                maxZ: { value: 50.0 }
+            },
+            vertexShader: `
+                varying vec3 vWorldPosition;
+                void main() {
+                    vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 startColor;
+                uniform vec3 endColor;
+                uniform float minZ;
+                uniform float maxZ;
+                varying vec3 vWorldPosition;
+
+                void main() {
+                    float t = clamp((vWorldPosition.z - minZ) / (maxZ - minZ), 0.0, 1.0);
+                    vec3 color = mix(startColor, endColor, t);
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
+        });
+
+        // Create wireframe mesh
+        const wireframeMaterial = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(this.edgeColor),
+            wireframe: true,
+            transparent: true,
+            opacity: 0.8
         });
 
         this.instancedMesh = new THREE.InstancedMesh(geometry, material, this.maxInstances);
@@ -144,11 +209,19 @@ export class Renderer3D {
         this.instancedMesh.castShadow = true;
         this.instancedMesh.receiveShadow = true;
         this.scene.add(this.instancedMesh);
+
+        this.wireframeMesh = new THREE.InstancedMesh(geometry, wireframeMaterial, this.maxInstances);
+        this.wireframeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.scene.add(this.wireframeMesh);
     }
 
     private updateCellColor(): void {
-        if (this.instancedMesh && this.instancedMesh.material instanceof THREE.MeshLambertMaterial) {
-            this.instancedMesh.material.color.set(new THREE.Color(this.cellColor));
+        if (this.instancedMesh && this.instancedMesh.material instanceof THREE.ShaderMaterial) {
+            this.instancedMesh.material.uniforms.startColor.value.set(this.gradientStartColor);
+            this.instancedMesh.material.uniforms.endColor.value.set(this.gradientEndColor);
+        }
+        if (this.wireframeMesh && this.wireframeMesh.material instanceof THREE.MeshBasicMaterial) {
+            this.wireframeMesh.material.color.set(this.edgeColor);
         }
     }
 
@@ -177,9 +250,9 @@ export class Renderer3D {
 
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const material = new THREE.LineBasicMaterial({
-            color: 0x333333,
+            color: 0x888888,
             transparent: true,
-            opacity: 0.3
+            opacity: 0.8
         });
 
         this.gridLines = new THREE.LineSegments(geometry, material);
@@ -197,6 +270,12 @@ export class Renderer3D {
     renderGenerations(generations: Generation[], displayStart: number, displayEnd: number): void {
         if (!this.instancedMesh) {
             this.recreateInstancedMesh();
+        }
+
+        // Update gradient Z range based on actual display range
+        if (this.instancedMesh && this.instancedMesh.material instanceof THREE.ShaderMaterial) {
+            this.instancedMesh.material.uniforms.minZ.value = displayStart;
+            this.instancedMesh.material.uniforms.maxZ.value = displayEnd;
         }
 
         const matrix = new THREE.Matrix4();
@@ -217,6 +296,7 @@ export class Renderer3D {
 
                 matrix.setPosition(x, y, z);
                 this.instancedMesh!.setMatrixAt(instanceIndex, matrix);
+                this.wireframeMesh!.setMatrixAt(instanceIndex, matrix);
                 instanceIndex++;
             }
         }
@@ -224,6 +304,9 @@ export class Renderer3D {
         this.currentInstanceCount = instanceIndex;
         this.instancedMesh!.count = this.currentInstanceCount;
         this.instancedMesh!.instanceMatrix.needsUpdate = true;
+
+        this.wireframeMesh!.count = this.currentInstanceCount;
+        this.wireframeMesh!.instanceMatrix.needsUpdate = true;
 
         if (this.showGenerationLabels) {
             this.createGenerationLabels(displayStart, displayEnd);
@@ -283,6 +366,7 @@ export class Renderer3D {
 
     dispose(): void {
         this.instancedMesh?.dispose();
+        this.wireframeMesh?.dispose();
         this.gridLines?.geometry.dispose();
         if (this.gridLines?.material instanceof THREE.Material) {
             this.gridLines.material.dispose();
