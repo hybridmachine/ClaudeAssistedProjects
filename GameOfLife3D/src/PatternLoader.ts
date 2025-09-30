@@ -13,6 +13,16 @@ export class PatternLoader {
     }
 
     private initializeBuiltInPatterns(): void {
+        this.builtInPatterns.set('r-pentomino', {
+            name: 'R-pentomino',
+            description: 'A methuselah that evolves for 1103 generations',
+            pattern: [
+                [false, true, true],
+                [true, true, false],
+                [false, true, false]
+            ]
+        });
+        
         this.builtInPatterns.set('glider', {
             name: 'Glider',
             description: 'A simple spaceship that travels diagonally',
@@ -65,16 +75,6 @@ export class PatternLoader {
                 [false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false],
                 [false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
                 [false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
-            ]
-        });
-
-        this.builtInPatterns.set('r-pentomino', {
-            name: 'R-pentomino',
-            description: 'A methuselah that evolves for 1103 generations',
-            pattern: [
-                [false, true, true],
-                [true, true, false],
-                [false, true, false]
             ]
         });
     }

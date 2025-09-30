@@ -12,7 +12,7 @@ export class CameraController {
     private camera: THREE.PerspectiveCamera;
     private canvas: HTMLCanvasElement;
 
-    private target = new THREE.Vector3(0, 0, 25);
+    private target = new THREE.Vector3(0, 25, 0);
     private spherical = new THREE.Spherical(50, Math.PI / 3, Math.PI / 4);
     private panSpeed = 0.1;
     private rotateSpeed = 0.01;
@@ -294,7 +294,8 @@ export class CameraController {
         const relativePosition = new THREE.Vector3();
         relativePosition.copy(this.camera.position).sub(this.target);
 
-        // Create rotation matrix around Z-axis
+        // Create rotation matrix around Z-axis (up-down axis)
+        // This rotates in the X-Y plane, orbiting horizontally around the vertical Z axis
         const rotationMatrix = new THREE.Matrix4();
         rotationMatrix.makeRotationZ(angle);
 
@@ -316,7 +317,7 @@ export class CameraController {
     }
 
     reset(): void {
-        this.target.set(0, 0, 25);
+        this.target.set(0, 25, 0);
         this.spherical.set(50, Math.PI / 3, Math.PI / 4);
         this.updateCameraPosition();
     }

@@ -53,7 +53,7 @@ export class Renderer3D {
         const aspect = window.innerWidth / window.innerHeight;
         this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 10000);
         this.camera.position.set(30, 30, 30);
-        this.camera.lookAt(0, 0, 0);
+        this.camera.lookAt(0, 25, 0);
     }
 
     private setupRenderer(): void {
@@ -189,7 +189,7 @@ export class Renderer3D {
                 varying vec3 vWorldPosition;
 
                 void main() {
-                    float t = clamp((vWorldPosition.z - minZ) / (maxZ - minZ), 0.0, 1.0);
+                    float t = clamp((vWorldPosition.y - minZ) / (maxZ - minZ), 0.0, 1.0);
                     vec3 color = mix(startColor, endColor, t);
                     gl_FragColor = vec4(color, 1.0);
                 }
@@ -242,10 +242,10 @@ export class Renderer3D {
 
         for (let i = 0; i <= this.gridSize; i++) {
             const pos = i - halfSize;
-            points.push(new THREE.Vector3(pos, -halfSize, 0));
-            points.push(new THREE.Vector3(pos, halfSize, 0));
-            points.push(new THREE.Vector3(-halfSize, pos, 0));
-            points.push(new THREE.Vector3(halfSize, pos, 0));
+            points.push(new THREE.Vector3(pos, 0, -halfSize));
+            points.push(new THREE.Vector3(pos, 0, halfSize));
+            points.push(new THREE.Vector3(-halfSize, 0, pos));
+            points.push(new THREE.Vector3(halfSize, 0, pos));
         }
 
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -272,7 +272,7 @@ export class Renderer3D {
             this.recreateInstancedMesh();
         }
 
-        // Update gradient Z range based on actual display range
+        // Update gradient Y range based on actual display range (generations are now on Y axis)
         if (this.instancedMesh && this.instancedMesh.material instanceof THREE.ShaderMaterial) {
             this.instancedMesh.material.uniforms.minZ.value = displayStart;
             this.instancedMesh.material.uniforms.maxZ.value = displayEnd;
@@ -291,8 +291,8 @@ export class Renderer3D {
                 if (instanceIndex >= this.maxInstances) break;
 
                 const x = cell.x - halfSize;
-                const y = cell.y - halfSize;
-                const z = genIndex;
+                const y = genIndex;
+                const z = cell.y - halfSize;
 
                 matrix.setPosition(x, y, z);
                 this.instancedMesh!.setMatrixAt(instanceIndex, matrix);
@@ -334,7 +334,7 @@ export class Renderer3D {
             const material = new THREE.SpriteMaterial({ map: texture });
             const sprite = new THREE.Sprite(material);
 
-            sprite.position.set(this.gridSize / 2 + 5, 0, i);
+            sprite.position.set(this.gridSize / 2 + 5, i, 0);
             sprite.scale.set(8, 2, 1);
 
             this.scene.add(sprite);

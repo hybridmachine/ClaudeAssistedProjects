@@ -74,9 +74,9 @@ class GameOfLife3D {
     }
 
     private loadDefaultPattern(): void {
-        const gliderPattern = this.patternLoader.getBuiltInPattern('glider');
-        if (gliderPattern) {
-            this.gameEngine.initializeFromPattern(gliderPattern);
+        const initialPattern = this.patternLoader.getBuiltInPattern('r-pentomino');
+        if (initialPattern) {
+            this.gameEngine.initializeFromPattern(initialPattern);
             this.gameEngine.computeGenerations(50);
             this.updateView();
         }
