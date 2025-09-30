@@ -201,24 +201,27 @@ export class Renderer3D {
                     // Normalize position to 0-1 range
                     float t = adjustedY / range;
 
-                    // Define colors: blue, green, yellow, purple
+                    // Define colors: blue, green, yellow, black, purple
                     vec3 blue = vec3(0.0, 0.0, 1.0);
                     vec3 green = vec3(0.0, 1.0, 0.0);
                     vec3 yellow = vec3(1.0, 1.0, 0.0);
+                    vec3 black = vec3(0.0, 0.0, 0.0);
                     vec3 purple = vec3(0.5, 0.0, 0.5);
 
-                    // Cycle through 4 colors (0-0.25: blue->green, 0.25-0.5: green->yellow, 0.5-0.75: yellow->purple, 0.75-1: purple->blue)
+                    // Cycle through 5 colors (0-0.2: blue->green, 0.2-0.4: green->yellow, 0.4-0.6: yellow->black, 0.6-0.8: black->purple, 0.8-1: purple->blue)
                     vec3 color;
-                    float segment = t * 4.0;
+                    float segment = t * 5.0;
 
                     if (segment < 1.0) {
                         color = mix(blue, green, segment);
                     } else if (segment < 2.0) {
                         color = mix(green, yellow, segment - 1.0);
                     } else if (segment < 3.0) {
-                        color = mix(yellow, purple, segment - 2.0);
+                        color = mix(yellow, black, segment - 2.0);
+                    } else if (segment < 4.0) {
+                        color = mix(black, purple, segment - 3.0);
                     } else {
-                        color = mix(purple, blue, segment - 3.0);
+                        color = mix(purple, blue, segment - 4.0);
                     }
 
                     gl_FragColor = vec4(color, 1.0);
