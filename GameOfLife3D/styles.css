@@ -21,6 +21,7 @@ body {
 #viewport {
     flex: 1;
     position: relative;
+    margin-left: 200px;
 }
 
 #canvas {
@@ -30,41 +31,21 @@ body {
 }
 
 .controls-panel {
-    width: 320px;
+    width: 200px;
     background-color: #2a2a2a;
-    border-left: 1px solid #444;
-    position: right;
-    transition: transform 0.3s ease;
+    border-right: 1px solid #444;
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
     z-index: 100;
-    transform: translateX(0px);
+    order: -1;
 }
 
-.controls-panel.collapsed {
-    transform: translateX(-320px);
-}
-
-.toggle-btn {
-    position: absolute;
-    left: -30px;
-    top: 20px;
-    width: 30px;
-    height: 40px;
-    background-color: #2a2a2a;
-    border: 1px solid #444;
-    border-right: none;
-    color: #ffffff;
-    cursor: pointer;
-    border-radius: 4px 0 0 4px;
-    z-index: 101;
-}
-
-.toggle-btn:hover {
-    background-color: #3a3a3a;
-}
 
 .controls-content {
     padding: 20px;
-    height: calc(100vh - 60px);
+    height: calc(100vh - 40px);
     overflow-y: auto;
 }
 
@@ -194,8 +175,8 @@ input[type="checkbox"] {
 .status-bar {
     position: absolute;
     bottom: 0;
-    left: 0;
-    right: 320px;
+    left: 200px;
+    right: 0;
     height: 40px;
     background-color: #2a2a2a;
     border-top: 1px solid #444;
@@ -215,25 +196,16 @@ input[type="checkbox"] {
     margin-right: 0;
 }
 
-.controls-panel.collapsed ~ .status-bar {
-    right: 40px;
-}
-
 @media (max-width: 768px) {
     .controls-panel {
-        width: 320px;
-        transform: translateX(-320px);
+        width: 200px;
     }
 
-    .controls-panel.collapsed {
-        transform: translateX(-320px);
+    #viewport {
+        margin-left: 200px;
     }
 
     .status-bar {
-        right: 320px;
-    }
-
-    .controls-panel.collapsed ~ .status-bar {
-        right: 40px;
+        left: 200px;
     }
 }

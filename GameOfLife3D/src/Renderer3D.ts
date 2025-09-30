@@ -25,8 +25,8 @@ export class Renderer3D {
     private gridSize: number = 50;
     private cellPadding: number = 0.2;
     private cellColor: string = '#00ff88';
-    private gradientStartColor: string = '#ff0080';
-    private gradientEndColor: string = '#00ff88';
+    private gradientStartColor: string = '#0000ff';
+    private gradientEndColor: string = '#ffff00';
     private edgeColor: string = '#ffffff';
     private edgeWidth: number = 0.05;
     private showGridLines: boolean = true;
@@ -34,6 +34,7 @@ export class Renderer3D {
 
     private maxInstances: number = 200 * 200 * 100;
     private currentInstanceCount: number = 0;
+    private animationStartTime: number = Date.now();
 
     private canvas: HTMLCanvasElement;
 
@@ -171,7 +172,8 @@ export class Renderer3D {
                 startColor: { value: new THREE.Color(this.gradientStartColor) },
                 endColor: { value: new THREE.Color(this.gradientEndColor) },
                 minZ: { value: 0.0 },
-                maxZ: { value: 50.0 }
+                maxZ: { value: 50.0 },
+                time: { value: 0.0 }
             },
             vertexShader: `
                 varying vec3 vWorldPosition;
@@ -186,11 +188,39 @@ export class Renderer3D {
                 uniform vec3 endColor;
                 uniform float minZ;
                 uniform float maxZ;
+                uniform float time;
                 varying vec3 vWorldPosition;
 
+                #define PI 3.14159265359
+
                 void main() {
-                    float t = clamp((vWorldPosition.y - minZ) / (maxZ - minZ), 0.0, 1.0);
-                    vec3 color = mix(startColor, endColor, t);
+                    float range = maxZ - minZ;
+                    float offset = mod(time, range);
+                    float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
+
+                    // Normalize position to 0-1 range
+                    float t = adjustedY / range;
+
+                    // Define colors: blue, green, yellow, purple
+                    vec3 blue = vec3(0.0, 0.0, 1.0);
+                    vec3 green = vec3(0.0, 1.0, 0.0);
+                    vec3 yellow = vec3(1.0, 1.0, 0.0);
+                    vec3 purple = vec3(0.5, 0.0, 0.5);
+
+                    // Cycle through 4 colors (0-0.25: blue->green, 0.25-0.5: green->yellow, 0.5-0.75: yellow->purple, 0.75-1: purple->blue)
+                    vec3 color;
+                    float segment = t * 4.0;
+
+                    if (segment < 1.0) {
+                        color = mix(blue, green, segment);
+                    } else if (segment < 2.0) {
+                        color = mix(green, yellow, segment - 1.0);
+                    } else if (segment < 3.0) {
+                        color = mix(yellow, purple, segment - 2.0);
+                    } else {
+                        color = mix(purple, blue, segment - 3.0);
+                    }
+
                     gl_FragColor = vec4(color, 1.0);
                 }
             `
@@ -351,6 +381,17 @@ export class Renderer3D {
     }
 
     render(): void {
+        // Update animation time (5 second cycle)
+        const elapsed = (Date.now() - this.animationStartTime) / 1000; // seconds
+        const cycleTime = 5.0; // 5 seconds per cycle
+        const normalizedTime = (elapsed % cycleTime) / cycleTime; // 0 to 1
+
+        if (this.instancedMesh && this.instancedMesh.material instanceof THREE.ShaderMaterial) {
+            const range = this.instancedMesh.material.uniforms.maxZ.value -
+                         this.instancedMesh.material.uniforms.minZ.value;
+            this.instancedMesh.material.uniforms.time.value = normalizedTime * range;
+        }
+
         this.renderer.render(this.scene, this.camera);
     }
 
