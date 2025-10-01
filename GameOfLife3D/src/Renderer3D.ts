@@ -21,6 +21,9 @@ export class Renderer3D {
     private gridLines: THREE.LineSegments | null = null;
     private starField: THREE.Points | null = null;
     private generationLabels: THREE.Sprite[] = [];
+    private starTwinkleIndices: number[] = [];
+    private starBaseBrightness: Float32Array | null = null;
+    private galaxies: THREE.Mesh[] = [];
 
     private gridSize: number = 50;
     private cellPadding: number = 0.2;
@@ -45,6 +48,7 @@ export class Renderer3D {
         this.setupRenderer();
         this.setupLighting();
         this.createStarField();
+        this.createGalaxies();
 
         this.handleResize();
         window.addEventListener('resize', () => this.handleResize());
@@ -85,6 +89,16 @@ export class Renderer3D {
     private createStarField(): void {
         const starCount = 5000;
         const positions = new Float32Array(starCount * 3);
+        const brightness = new Float32Array(starCount);
+        this.starBaseBrightness = new Float32Array(starCount);
+
+        // Select 2% of stars to twinkle
+        const twinkleCount = Math.floor(starCount * 0.02);
+        const twinkleSet = new Set<number>();
+        while (twinkleSet.size < twinkleCount) {
+            twinkleSet.add(Math.floor(Math.random() * starCount));
+        }
+        this.starTwinkleIndices = Array.from(twinkleSet);
 
         for (let i = 0; i < starCount; i++) {
             const i3 = i * 3;
@@ -98,19 +112,137 @@ export class Renderer3D {
             positions[i3] = radius * Math.sin(phi) * Math.cos(theta);
             positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
             positions[i3 + 2] = radius * Math.cos(phi);
+
+            // Vary base brightness between 0.3 and 1.0
+            const baseBrightness = 0.3 + Math.random() * 0.7;
+            this.starBaseBrightness[i] = baseBrightness;
+            brightness[i] = baseBrightness;
         }
 
         const starGeometry = new THREE.BufferGeometry();
         starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        starGeometry.setAttribute('brightness', new THREE.BufferAttribute(brightness, 1));
 
-        const starMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 2,
-            sizeAttenuation: false
+        const starMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                pointSize: { value: 2.0 }
+            },
+            vertexShader: `
+                attribute float brightness;
+                uniform float pointSize;
+                varying float vBrightness;
+                void main() {
+                    vBrightness = brightness;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = pointSize;
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                varying float vBrightness;
+                void main() {
+                    gl_FragColor = vec4(vBrightness, vBrightness, vBrightness, 1.0);
+                }
+            `
         });
 
         this.starField = new THREE.Points(starGeometry, starMaterial);
         this.scene.add(this.starField);
+    }
+
+    private createGalaxies(): void {
+        const galaxyCount = 15;
+        const skyRadius = 5000;
+
+        for (let i = 0; i < galaxyCount; i++) {
+            // Random position on sphere
+            const u = Math.random();
+            const v = Math.random();
+            const theta = 2 * Math.PI * u;
+            const phi = Math.acos(2 * v - 1);
+
+            const x = skyRadius * Math.sin(phi) * Math.cos(theta);
+            const y = skyRadius * Math.sin(phi) * Math.sin(theta);
+            const z = skyRadius * Math.cos(phi);
+
+            // Galaxy size: 3-7 degrees of arc
+            const arcDegrees = 3 + Math.random() * 4;
+            const arcRadians = arcDegrees * Math.PI / 180;
+            const galaxySize = 2 * skyRadius * Math.tan(arcRadians / 2);
+
+            // Create galaxy texture
+            const canvas = document.createElement('canvas');
+            const size = 512;
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) continue;
+
+            // Create radial gradient for galaxy core
+            const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+            gradient.addColorStop(0, 'rgba(255, 255, 220, 0.9)');
+            gradient.addColorStop(0.1, 'rgba(200, 200, 255, 0.6)');
+            gradient.addColorStop(0.3, 'rgba(150, 150, 200, 0.3)');
+            gradient.addColorStop(0.6, 'rgba(100, 100, 150, 0.1)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+
+            // Add spiral arms with noise
+            const armCount = 2 + Math.floor(Math.random() * 2); // 2-3 spiral arms
+            for (let arm = 0; arm < armCount; arm++) {
+                const armAngle = (arm / armCount) * Math.PI * 2;
+
+                for (let r = 0; r < 200; r++) {
+                    const radius = (r / 200) * (size / 2);
+                    const spiralTightness = 3 + Math.random() * 2;
+                    const angle = armAngle + (r / 200) * Math.PI * spiralTightness;
+
+                    const sx = size/2 + radius * Math.cos(angle);
+                    const sy = size/2 + radius * Math.sin(angle);
+
+                    const brightness = Math.random() * 0.3 * (1 - r / 200);
+                    const starSize = Math.random() * 3 + 1;
+
+                    ctx.fillStyle = `rgba(200, 200, 255, ${brightness})`;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, starSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+
+            const galaxyMaterial = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+                opacity: 0.8,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+
+            const aspectRatio = 0.5 + Math.random() * 0.5; // Random aspect for different orientations
+            const geometry = new THREE.PlaneGeometry(galaxySize, galaxySize * aspectRatio);
+            const galaxy = new THREE.Mesh(geometry, galaxyMaterial);
+
+            galaxy.position.set(x, y, z);
+
+            // Random orientation
+            galaxy.rotation.x = Math.random() * Math.PI * 2;
+            galaxy.rotation.y = Math.random() * Math.PI * 2;
+            galaxy.rotation.z = Math.random() * Math.PI * 2;
+
+            // Make galaxy face the camera initially, then apply random rotation
+            galaxy.lookAt(0, 0, 0);
+            const tiltX = (Math.random() - 0.5) * Math.PI; // -90 to +90 degrees
+            const tiltY = (Math.random() - 0.5) * Math.PI;
+            galaxy.rotateX(tiltX);
+            galaxy.rotateY(tiltY);
+
+            this.galaxies.push(galaxy);
+            this.scene.add(galaxy);
+        }
     }
 
     setGridSize(size: number): void {
@@ -395,6 +527,27 @@ export class Renderer3D {
             this.instancedMesh.material.uniforms.time.value = normalizedTime * range;
         }
 
+        // Update star twinkle animation
+        if (this.starField && this.starBaseBrightness) {
+            const geometry = this.starField.geometry;
+            const brightnessAttribute = geometry.getAttribute('brightness') as THREE.BufferAttribute;
+
+            if (brightnessAttribute) {
+                const twinkleCycle = 3.0; // 3 second twinkle cycle
+                const twinklePhase = (elapsed % twinkleCycle) / twinkleCycle; // 0 to 1
+
+                // Update brightness for twinkling stars
+                for (const starIndex of this.starTwinkleIndices) {
+                    const baseBrightness = this.starBaseBrightness[starIndex];
+                    // Slow sine wave twinkle between 70% and 100% of base brightness
+                    const twinkle = 0.7 + 0.3 * Math.sin(twinklePhase * Math.PI * 2);
+                    brightnessAttribute.setX(starIndex, baseBrightness * twinkle);
+                }
+
+                brightnessAttribute.needsUpdate = true;
+            }
+        }
+
         this.renderer.render(this.scene, this.camera);
     }
 
@@ -419,6 +572,15 @@ export class Renderer3D {
         if (this.starField?.material instanceof THREE.Material) {
             this.starField.material.dispose();
         }
+        this.galaxies.forEach(galaxy => {
+            galaxy.geometry.dispose();
+            if (galaxy.material instanceof THREE.MeshBasicMaterial) {
+                if (galaxy.material.map) {
+                    galaxy.material.map.dispose();
+                }
+                galaxy.material.dispose();
+            }
+        });
         this.generationLabels.forEach(label => {
             label.material.dispose();
         });
