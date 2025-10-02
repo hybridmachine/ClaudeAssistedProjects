@@ -44,9 +44,17 @@ export class Renderer3D {
     // Brownian motion wiggle state
     private raycaster: THREE.Raycaster = new THREE.Raycaster();
     private mouse: THREE.Vector2 = new THREE.Vector2();
-    private cubeWiggleState: Map<number, { startTime: number, basePosition: THREE.Vector3, noiseOffset: THREE.Vector3 }> = new Map();
     private lastMouseMove: number = 0;
     private instancePositions: Map<number, THREE.Vector3> = new Map();
+
+    // Pre-calculated Brownian motion path (calculated once at startup)
+    private wigglePathX: Float32Array = new Float32Array(0);
+    private wigglePathY: Float32Array = new Float32Array(0);
+    private wigglePathZ: Float32Array = new Float32Array(0);
+    private wigglePathSamples: number = 0;
+
+    // Wiggle state stored as instance attribute
+    private wiggleStartTimes: Float32Array | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -59,6 +67,9 @@ export class Renderer3D {
 
         this.handleResize();
         window.addEventListener('resize', () => this.handleResize());
+
+        // Pre-calculate Brownian motion path once at startup
+        this.generateWigglePath();
 
         // Setup mouse tracking for Brownian wiggle
         this.setupMouseTracking();
@@ -255,6 +266,38 @@ export class Renderer3D {
         }
     }
 
+    private generateWigglePath(): void {
+        // Generate 5 seconds at 60fps = 300 samples
+        const duration = 5.0; // seconds
+        const fps = 60;
+        this.wigglePathSamples = Math.ceil(duration * fps);
+
+        this.wigglePathX = new Float32Array(this.wigglePathSamples);
+        this.wigglePathY = new Float32Array(this.wigglePathSamples);
+        this.wigglePathZ = new Float32Array(this.wigglePathSamples);
+
+        // Generate smooth Brownian motion using cumulative random walk
+        let x = 0, y = 0, z = 0;
+        const smoothing = 0.15; // Controls how smooth the motion is
+
+        for (let i = 0; i < this.wigglePathSamples; i++) {
+            // Random walk with smoothing
+            x += (Math.random() * 2 - 1) * smoothing;
+            y += (Math.random() * 2 - 1) * smoothing;
+            z += (Math.random() * 2 - 1) * smoothing;
+
+            // Apply damping to keep values in reasonable range
+            x *= 0.95;
+            y *= 0.95;
+            z *= 0.95;
+
+            // Store normalized values (-1 to 1 range)
+            this.wigglePathX[i] = Math.max(-1, Math.min(1, x));
+            this.wigglePathY[i] = Math.max(-1, Math.min(1, y));
+            this.wigglePathZ[i] = Math.max(-1, Math.min(1, z));
+        }
+    }
+
     private setupMouseTracking(): void {
         let lastMouseMoveTime = 0;
         const throttleMs = 16; // ~60fps
@@ -294,52 +337,20 @@ export class Renderer3D {
     }
 
     private triggerWiggle(instanceId: number): void {
-        const now = performance.now();
-
-        // Get the base position for this instance
-        const basePosition = this.instancePositions.get(instanceId);
-        if (!basePosition) {
+        if (!this.wiggleStartTimes || !this.instancedMesh) {
             return;
         }
 
-        // Check if already wiggling, restart the animation
-        if (this.cubeWiggleState.has(instanceId)) {
-            const state = this.cubeWiggleState.get(instanceId)!;
-            state.startTime = now;
-        } else {
-            // Create new wiggle state
-            this.cubeWiggleState.set(instanceId, {
-                startTime: now,
-                basePosition: basePosition.clone(),
-                noiseOffset: new THREE.Vector3(
-                    Math.random() * 1000,
-                    Math.random() * 1000,
-                    Math.random() * 1000
-                )
-            });
+        const now = performance.now();
+
+        // Set the wiggle start time for this instance
+        this.wiggleStartTimes[instanceId] = now;
+
+        // Mark the attribute as needing update
+        const wiggleAttr = this.instancedMesh.geometry.getAttribute('wiggleStartTime') as THREE.InstancedBufferAttribute;
+        if (wiggleAttr) {
+            wiggleAttr.needsUpdate = true;
         }
-    }
-
-    // Simple 3D Perlin-like noise function (simplified)
-    private noise3D(x: number, y: number, z: number): number {
-        // Simple pseudo-random noise based on sine waves
-        const n = Math.sin(x * 12.9898 + y * 78.233 + z * 45.164) * 43758.5453;
-        return n - Math.floor(n);
-    }
-
-    private smoothNoise(x: number, y: number, z: number): number {
-        // Sample multiple octaves for smoother noise
-        let value = 0;
-        let amplitude = 1;
-        let frequency = 1;
-
-        for (let i = 0; i < 3; i++) {
-            value += this.noise3D(x * frequency, y * frequency, z * frequency) * amplitude;
-            amplitude *= 0.5;
-            frequency *= 2;
-        }
-
-        return (value - 0.5) * 2; // Normalize to -1 to 1
     }
 
     setGridSize(size: number): void {
@@ -402,12 +413,57 @@ export class Renderer3D {
                 endColor: { value: new THREE.Color(this.gradientEndColor) },
                 minZ: { value: 0.0 },
                 maxZ: { value: 50.0 },
-                time: { value: 0.0 }
+                time: { value: 0.0 },
+                currentTime: { value: 0.0 },
+                wigglePathX: { value: this.wigglePathX },
+                wigglePathY: { value: this.wigglePathY },
+                wigglePathZ: { value: this.wigglePathZ },
+                wigglePathLength: { value: this.wigglePathSamples },
+                wiggleDuration: { value: 5000.0 },
+                maxDisplacement: { value: 0.05 }
             },
             vertexShader: `
+                attribute float wiggleStartTime;
+                uniform float currentTime;
+                uniform float wigglePathX[300];
+                uniform float wigglePathY[300];
+                uniform float wigglePathZ[300];
+                uniform int wigglePathLength;
+                uniform float wiggleDuration;
+                uniform float maxDisplacement;
+
                 varying vec3 vWorldPosition;
+
                 void main() {
                     vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+
+                    // Calculate wiggle offset if this instance is wiggling
+                    if (wiggleStartTime > 0.0) {
+                        float elapsed = currentTime - wiggleStartTime;
+
+                        // Only wiggle if within duration
+                        if (elapsed >= 0.0 && elapsed < wiggleDuration) {
+                            // Calculate sample index
+                            float normalizedTime = elapsed / wiggleDuration;
+                            int sampleIndex = int(floor(normalizedTime * float(wigglePathLength - 1)));
+                            sampleIndex = clamp(sampleIndex, 0, wigglePathLength - 1);
+
+                            // Calculate exponential decay
+                            float t = elapsed / 1000.0;
+                            float tau = wiggleDuration / 5000.0;
+                            float amplitude = maxDisplacement * exp(-t / tau);
+
+                            // Apply wiggle from pre-calculated path
+                            vec3 wiggleOffset = vec3(
+                                wigglePathX[sampleIndex] * amplitude,
+                                wigglePathY[sampleIndex] * amplitude,
+                                wigglePathZ[sampleIndex] * amplitude
+                            );
+
+                            worldPosition.xyz += wiggleOffset;
+                        }
+                    }
+
                     vWorldPosition = worldPosition.xyz;
                     gl_Position = projectionMatrix * viewMatrix * worldPosition;
                 }
@@ -470,6 +526,15 @@ export class Renderer3D {
         this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.instancedMesh.castShadow = true;
         this.instancedMesh.receiveShadow = true;
+
+        // Add wiggle start time instance attribute
+        this.wiggleStartTimes = new Float32Array(this.maxInstances);
+        this.wiggleStartTimes.fill(0); // 0 means not wiggling
+        this.instancedMesh.geometry.setAttribute(
+            'wiggleStartTime',
+            new THREE.InstancedBufferAttribute(this.wiggleStartTimes, 1)
+        );
+
         this.scene.add(this.instancedMesh);
 
         this.wireframeMesh = new THREE.InstancedMesh(geometry, wireframeMaterial, this.maxInstances);
@@ -548,6 +613,11 @@ export class Renderer3D {
         // Clear old position mapping
         this.instancePositions.clear();
 
+        // Reset wiggle start times when rendering new generations
+        if (this.wiggleStartTimes) {
+            this.wiggleStartTimes.fill(0);
+        }
+
         for (let genIndex = displayStart; genIndex <= displayEnd && genIndex < generations.length; genIndex++) {
             const generation = generations[genIndex];
             if (!generation) continue;
@@ -618,80 +688,8 @@ export class Renderer3D {
         return this.renderer;
     }
 
-    private updateWiggleAnimations(): void {
-        if (!this.instancedMesh || this.cubeWiggleState.size === 0) {
-            return;
-        }
-
-        const now = performance.now();
-        const wiggleDuration = 5000; // 5 seconds in milliseconds
-        const maxDisplacement = 0.05; // 5% of cube dimensions (cube is size 1)
-        const tau = wiggleDuration / 5; // Decay time constant for exponential decay
-
-        const matrix = new THREE.Matrix4();
-        const position = new THREE.Vector3();
-        const toRemove: number[] = [];
-
-        this.cubeWiggleState.forEach((state, instanceId) => {
-            const elapsed = now - state.startTime;
-
-            // Check if animation is complete
-            if (elapsed >= wiggleDuration) {
-                toRemove.push(instanceId);
-                // Reset to base position
-                matrix.setPosition(state.basePosition.x, state.basePosition.y, state.basePosition.z);
-                this.instancedMesh!.setMatrixAt(instanceId, matrix);
-                this.wireframeMesh!.setMatrixAt(instanceId, matrix);
-                return;
-            }
-
-            // Calculate exponential decay amplitude
-            const t = elapsed / 1000; // Convert to seconds
-            const amplitude = maxDisplacement * Math.exp(-t / tau);
-
-            // Generate Brownian motion using smooth noise
-            const timeScale = 0.003; // Controls speed of Brownian motion
-            const wiggleX = this.smoothNoise(
-                state.noiseOffset.x + elapsed * timeScale,
-                state.noiseOffset.y,
-                state.noiseOffset.z
-            ) * amplitude;
-            const wiggleY = this.smoothNoise(
-                state.noiseOffset.x,
-                state.noiseOffset.y + elapsed * timeScale,
-                state.noiseOffset.z
-            ) * amplitude;
-            const wiggleZ = this.smoothNoise(
-                state.noiseOffset.x,
-                state.noiseOffset.y,
-                state.noiseOffset.z + elapsed * timeScale
-            ) * amplitude;
-
-            // Apply wiggle to base position
-            position.set(
-                state.basePosition.x + wiggleX,
-                state.basePosition.y + wiggleY,
-                state.basePosition.z + wiggleZ
-            );
-
-            matrix.setPosition(position.x, position.y, position.z);
-            this.instancedMesh!.setMatrixAt(instanceId, matrix);
-            this.wireframeMesh!.setMatrixAt(instanceId, matrix);
-        });
-
-        // Remove completed animations
-        toRemove.forEach(id => this.cubeWiggleState.delete(id));
-
-        // Update instance matrices if there were any wiggling cubes
-        if (this.cubeWiggleState.size > 0 || toRemove.length > 0) {
-            this.instancedMesh.instanceMatrix.needsUpdate = true;
-            this.wireframeMesh!.instanceMatrix.needsUpdate = true;
-        }
-    }
-
     render(): void {
-        // Update wiggle animations
-        this.updateWiggleAnimations();
+        const now = performance.now();
 
         // Update animation time (5 second cycle)
         const elapsed = (Date.now() - this.animationStartTime) / 1000; // seconds
@@ -702,6 +700,8 @@ export class Renderer3D {
             const range = this.instancedMesh.material.uniforms.maxZ.value -
                          this.instancedMesh.material.uniforms.minZ.value;
             this.instancedMesh.material.uniforms.time.value = normalizedTime * range;
+            // Update current time for wiggle animations (GPU-driven)
+            this.instancedMesh.material.uniforms.currentTime.value = now;
         }
 
         // Update star twinkle animation
