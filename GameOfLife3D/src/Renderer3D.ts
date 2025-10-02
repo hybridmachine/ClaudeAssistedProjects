@@ -41,6 +41,13 @@ export class Renderer3D {
 
     private canvas: HTMLCanvasElement;
 
+    // Brownian motion wiggle state
+    private raycaster: THREE.Raycaster = new THREE.Raycaster();
+    private mouse: THREE.Vector2 = new THREE.Vector2();
+    private cubeWiggleState: Map<number, { startTime: number, basePosition: THREE.Vector3, noiseOffset: THREE.Vector3 }> = new Map();
+    private lastMouseMove: number = 0;
+    private instancePositions: Map<number, THREE.Vector3> = new Map();
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         this.scene = new THREE.Scene();
@@ -52,6 +59,9 @@ export class Renderer3D {
 
         this.handleResize();
         window.addEventListener('resize', () => this.handleResize());
+
+        // Setup mouse tracking for Brownian wiggle
+        this.setupMouseTracking();
     }
 
     private setupCamera(): void {
@@ -243,6 +253,93 @@ export class Renderer3D {
             this.galaxies.push(galaxy);
             this.scene.add(galaxy);
         }
+    }
+
+    private setupMouseTracking(): void {
+        let lastMouseMoveTime = 0;
+        const throttleMs = 16; // ~60fps
+
+        this.canvas.addEventListener('mousemove', (event) => {
+            const now = performance.now();
+            if (now - lastMouseMoveTime < throttleMs) {
+                return;
+            }
+            lastMouseMoveTime = now;
+
+            // Convert mouse position to normalized device coordinates (-1 to +1)
+            const rect = this.canvas.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            this.lastMouseMove = now;
+            this.checkCubeHover();
+        });
+    }
+
+    private checkCubeHover(): void {
+        if (!this.instancedMesh || this.currentInstanceCount === 0) {
+            return;
+        }
+
+        // Update raycaster
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+
+        // Check intersection with instanced mesh
+        const intersects = this.raycaster.intersectObject(this.instancedMesh);
+
+        if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+            const instanceId = intersects[0].instanceId;
+            this.triggerWiggle(instanceId);
+        }
+    }
+
+    private triggerWiggle(instanceId: number): void {
+        const now = performance.now();
+
+        // Get the base position for this instance
+        const basePosition = this.instancePositions.get(instanceId);
+        if (!basePosition) {
+            return;
+        }
+
+        // Check if already wiggling, restart the animation
+        if (this.cubeWiggleState.has(instanceId)) {
+            const state = this.cubeWiggleState.get(instanceId)!;
+            state.startTime = now;
+        } else {
+            // Create new wiggle state
+            this.cubeWiggleState.set(instanceId, {
+                startTime: now,
+                basePosition: basePosition.clone(),
+                noiseOffset: new THREE.Vector3(
+                    Math.random() * 1000,
+                    Math.random() * 1000,
+                    Math.random() * 1000
+                )
+            });
+        }
+    }
+
+    // Simple 3D Perlin-like noise function (simplified)
+    private noise3D(x: number, y: number, z: number): number {
+        // Simple pseudo-random noise based on sine waves
+        const n = Math.sin(x * 12.9898 + y * 78.233 + z * 45.164) * 43758.5453;
+        return n - Math.floor(n);
+    }
+
+    private smoothNoise(x: number, y: number, z: number): number {
+        // Sample multiple octaves for smoother noise
+        let value = 0;
+        let amplitude = 1;
+        let frequency = 1;
+
+        for (let i = 0; i < 3; i++) {
+            value += this.noise3D(x * frequency, y * frequency, z * frequency) * amplitude;
+            amplitude *= 0.5;
+            frequency *= 2;
+        }
+
+        return (value - 0.5) * 2; // Normalize to -1 to 1
     }
 
     setGridSize(size: number): void {
@@ -448,6 +545,9 @@ export class Renderer3D {
 
         const halfSize = this.gridSize / 2;
 
+        // Clear old position mapping
+        this.instancePositions.clear();
+
         for (let genIndex = displayStart; genIndex <= displayEnd && genIndex < generations.length; genIndex++) {
             const generation = generations[genIndex];
             if (!generation) continue;
@@ -458,6 +558,9 @@ export class Renderer3D {
                 const x = cell.x - halfSize;
                 const y = genIndex;
                 const z = cell.y - halfSize;
+
+                // Store base position for this instance
+                this.instancePositions.set(instanceIndex, new THREE.Vector3(x, y, z));
 
                 matrix.setPosition(x, y, z);
                 this.instancedMesh!.setMatrixAt(instanceIndex, matrix);
@@ -515,7 +618,81 @@ export class Renderer3D {
         return this.renderer;
     }
 
+    private updateWiggleAnimations(): void {
+        if (!this.instancedMesh || this.cubeWiggleState.size === 0) {
+            return;
+        }
+
+        const now = performance.now();
+        const wiggleDuration = 5000; // 5 seconds in milliseconds
+        const maxDisplacement = 0.05; // 5% of cube dimensions (cube is size 1)
+        const tau = wiggleDuration / 5; // Decay time constant for exponential decay
+
+        const matrix = new THREE.Matrix4();
+        const position = new THREE.Vector3();
+        const toRemove: number[] = [];
+
+        this.cubeWiggleState.forEach((state, instanceId) => {
+            const elapsed = now - state.startTime;
+
+            // Check if animation is complete
+            if (elapsed >= wiggleDuration) {
+                toRemove.push(instanceId);
+                // Reset to base position
+                matrix.setPosition(state.basePosition.x, state.basePosition.y, state.basePosition.z);
+                this.instancedMesh!.setMatrixAt(instanceId, matrix);
+                this.wireframeMesh!.setMatrixAt(instanceId, matrix);
+                return;
+            }
+
+            // Calculate exponential decay amplitude
+            const t = elapsed / 1000; // Convert to seconds
+            const amplitude = maxDisplacement * Math.exp(-t / tau);
+
+            // Generate Brownian motion using smooth noise
+            const timeScale = 0.003; // Controls speed of Brownian motion
+            const wiggleX = this.smoothNoise(
+                state.noiseOffset.x + elapsed * timeScale,
+                state.noiseOffset.y,
+                state.noiseOffset.z
+            ) * amplitude;
+            const wiggleY = this.smoothNoise(
+                state.noiseOffset.x,
+                state.noiseOffset.y + elapsed * timeScale,
+                state.noiseOffset.z
+            ) * amplitude;
+            const wiggleZ = this.smoothNoise(
+                state.noiseOffset.x,
+                state.noiseOffset.y,
+                state.noiseOffset.z + elapsed * timeScale
+            ) * amplitude;
+
+            // Apply wiggle to base position
+            position.set(
+                state.basePosition.x + wiggleX,
+                state.basePosition.y + wiggleY,
+                state.basePosition.z + wiggleZ
+            );
+
+            matrix.setPosition(position.x, position.y, position.z);
+            this.instancedMesh!.setMatrixAt(instanceId, matrix);
+            this.wireframeMesh!.setMatrixAt(instanceId, matrix);
+        });
+
+        // Remove completed animations
+        toRemove.forEach(id => this.cubeWiggleState.delete(id));
+
+        // Update instance matrices if there were any wiggling cubes
+        if (this.cubeWiggleState.size > 0 || toRemove.length > 0) {
+            this.instancedMesh.instanceMatrix.needsUpdate = true;
+            this.wireframeMesh!.instanceMatrix.needsUpdate = true;
+        }
+    }
+
     render(): void {
+        // Update wiggle animations
+        this.updateWiggleAnimations();
+
         // Update animation time (5 second cycle)
         const elapsed = (Date.now() - this.animationStartTime) / 1000; // seconds
         const cycleTime = 5.0; // 5 seconds per cycle
