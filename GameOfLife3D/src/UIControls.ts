@@ -67,6 +67,18 @@ export class UIControls {
                 console.warn(`Element with id '${id}' not found`);
             }
         });
+
+        const controls = this.elements['controls'];
+        if (controls) {
+            controls.setAttribute('aria-hidden', 'false');
+        }
+
+        const toggle = this.elements['toggle-controls'] as HTMLButtonElement | undefined;
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', 'true');
+            toggle.setAttribute('aria-label', 'Hide Controls panel');
+            toggle.setAttribute('title', 'Hide Controls');
+        }
     }
 
     private setupEventListeners(): void {
@@ -197,14 +209,28 @@ export class UIControls {
 
     private toggleControlsPanel(): void {
         const controls = this.elements['controls'];
-        const toggle = this.elements['toggle-controls'];
+        const toggle = this.elements['toggle-controls'] as HTMLButtonElement | undefined;
 
-        if (controls) {
-            controls.classList.toggle('collapsed');
-            if (toggle) {
-                toggle.textContent = controls.classList.contains('collapsed') ? '▶' : '◀';
-            }
+        if (!controls || !toggle) {
+            return;
         }
+
+        const isCollapsed = controls.classList.toggle('collapsed');
+        document.body.classList.toggle('controls-collapsed', isCollapsed);
+        controls.setAttribute('aria-hidden', isCollapsed.toString());
+
+        const expandedText = 'Hide Controls';
+        const collapsedText = 'Show Controls';
+        const label = isCollapsed ? collapsedText : expandedText;
+
+        toggle.textContent = label;
+        toggle.setAttribute('aria-expanded', (!isCollapsed).toString());
+        toggle.setAttribute('aria-label', `${label} panel`);
+        toggle.setAttribute('title', label);
+
+        window.requestAnimationFrame(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
     }
 
     private onGridSizeChange(size: number): void {
