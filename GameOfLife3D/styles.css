@@ -118,14 +118,12 @@ body {
 
 .play-controls {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
     gap: 5px;
     margin-top: 10px;
 }
 
-.play-controls button:first-child {
-    grid-column: 1 / -1;
-}
+
 
 .pattern-btn {
     margin-bottom: 5px !important;

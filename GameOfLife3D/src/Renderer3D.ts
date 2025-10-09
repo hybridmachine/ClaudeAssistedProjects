@@ -24,6 +24,7 @@ export class Renderer3D {
     private starTwinkleIndices: number[] = [];
     private starBaseBrightness: Float32Array | null = null;
     private galaxies: THREE.Mesh[] = [];
+    private explosionParticles: THREE.Points | null = null;
 
     private gridSize: number = 50;
     private cellPadding: number = 0.2;
@@ -507,6 +508,65 @@ export class Renderer3D {
         }
     }
 
+    public startExplosion(generations: Generation[], gridSize: number): void {
+        if (this.explosionParticles) {
+            this.scene.remove(this.explosionParticles);
+            this.explosionParticles.geometry.dispose();
+            (this.explosionParticles.material as THREE.Material).dispose();
+            this.explosionParticles = null;
+        }
+
+        const particles: THREE.Vector3[] = [];
+        const velocities: THREE.Vector3[] = [];
+        const colors: THREE.Color[] = [];
+        const startTimes: number[] = [];
+
+        const halfSize = gridSize / 2;
+
+        for (const generation of generations) {
+            for (const cell of generation.liveCells) {
+                const x = cell.x - halfSize;
+                const y = generation.index;
+                const z = cell.y - halfSize;
+
+                for (let i = 0; i < 10; i++) {
+                    particles.push(new THREE.Vector3(x, y, z));
+                    velocities.push(new THREE.Vector3(
+                        (Math.random() - 0.5) * 20,
+                        (Math.random() - 0.5) * 20,
+                        (Math.random() - 0.5) * 20
+                    ));
+                    colors.push(new THREE.Color(this.cellColor));
+                    startTimes.push(Date.now());
+                }
+            }
+        }
+
+        const geometry = new THREE.BufferGeometry().setFromPoints(particles);
+        geometry.setAttribute('velocity', new THREE.Float32BufferAttribute(velocities.flatMap(v => v.toArray()), 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors.flatMap(c => c.toArray()), 3));
+        geometry.setAttribute('startTime', new THREE.Float32BufferAttribute(startTimes, 1));
+
+        const material = new THREE.PointsMaterial({
+            size: 0.1,
+            vertexColors: true,
+            transparent: true,
+            opacity: 1.0
+        });
+
+        this.explosionParticles = new THREE.Points(geometry, material);
+        this.scene.add(this.explosionParticles);
+
+        setTimeout(() => {
+            if (this.explosionParticles) {
+                this.scene.remove(this.explosionParticles);
+                this.explosionParticles.geometry.dispose();
+                (this.explosionParticles.material as THREE.Material).dispose();
+                this.explosionParticles = null;
+            }
+        }, 3000);
+    }
+
     getCamera(): THREE.PerspectiveCamera {
         return this.camera;
     }
@@ -546,6 +606,30 @@ export class Renderer3D {
 
                 brightnessAttribute.needsUpdate = true;
             }
+        }
+
+        if (this.explosionParticles) {
+            const positions = this.explosionParticles.geometry.attributes.position as THREE.BufferAttribute;
+            const velocities = this.explosionParticles.geometry.attributes.velocity as THREE.BufferAttribute;
+            const startTimes = this.explosionParticles.geometry.attributes.startTime as THREE.BufferAttribute;
+            const material = this.explosionParticles.material as THREE.PointsMaterial;
+
+            const now = Date.now();
+            for (let i = 0; i < positions.count; i++) {
+                const elapsedTime = (now - startTimes.getX(i)) / 1000;
+                if (elapsedTime > 3) {
+                    continue;
+                }
+
+                const x = positions.getX(i) + velocities.getX(i) * 0.01;
+                const y = positions.getY(i) + velocities.getY(i) * 0.01;
+                const z = positions.getZ(i) + velocities.getZ(i) * 0.01;
+
+                positions.setXYZ(i, x, y, z);
+
+                material.opacity = 1.0 - (elapsedTime / 3.0);
+            }
+            positions.needsUpdate = true;
         }
 
         this.renderer.render(this.scene, this.camera);

@@ -52,7 +52,7 @@ export class UIControls {
         const elementIds = [
             'toggle-controls', 'controls',
             'grid-size', 'generation-count', 'display-start', 'display-end',
-            'compute-btn', 'play-btn', 'pause-btn', 'step-back', 'step-forward',
+            'compute-btn', 'play-btn', 'pause-btn', 'step-back', 'step-forward', 'reset-btn',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
             'reset-camera',
@@ -194,6 +194,10 @@ export class UIControls {
 
         if (this.elements['reset-camera']) {
             this.elements['reset-camera'].addEventListener('click', () => this.resetCamera());
+        }
+
+        if (this.elements['reset-btn']) {
+            this.elements['reset-btn'].addEventListener('click', () => this.onReset());
         }
 
         document.querySelectorAll('.pattern-btn').forEach(btn => {
@@ -413,6 +417,25 @@ export class UIControls {
             this.renderCurrentView();
             this.updateUI();
         }
+    }
+
+    private onReset(): void {
+        const currentGenerations = this.gameEngine.getGenerations();
+        if (currentGenerations.length > 0) {
+            this.renderer.startExplosion(currentGenerations, this.gameEngine.getGridSize());
+        }
+
+        setTimeout(() => {
+            this.resetGame();
+        }, 3000);
+    }
+
+    private resetGame(): void {
+        this.loadBuiltInPattern('r-pentomino');
+        this.gameEngine.computeGenerations(50);
+        this.updateDisplayRange();
+        this.renderCurrentView();
+        this.updateUI();
     }
 
     private resetCamera(): void {
