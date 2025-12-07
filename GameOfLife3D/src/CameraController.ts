@@ -44,6 +44,22 @@ export class CameraController {
         button: -1
     };
 
+    // Touch state for gesture handling
+    private touch = {
+        isActive: false,
+        touchCount: 0,
+        // Single touch tracking (for orbit)
+        startX: 0,
+        startY: 0,
+        currentX: 0,
+        currentY: 0,
+        // Two-finger tracking (for pan and pinch)
+        touch1: { x: 0, y: 0 },
+        touch2: { x: 0, y: 0 },
+        initialPinchDistance: 0,
+        lastPinchDistance: 0
+    };
+
     private isEnabled = true;
 
     constructor(camera: THREE.PerspectiveCamera, canvas: HTMLCanvasElement) {
@@ -64,6 +80,12 @@ export class CameraController {
         this.canvas.addEventListener('wheel', (event) => this.onWheel(event));
 
         this.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+        // Touch event listeners for mobile/tablet support
+        this.canvas.addEventListener('touchstart', (event) => this.onTouchStart(event), { passive: false });
+        this.canvas.addEventListener('touchmove', (event) => this.onTouchMove(event), { passive: false });
+        this.canvas.addEventListener('touchend', (event) => this.onTouchEnd(event), { passive: false });
+        this.canvas.addEventListener('touchcancel', (event) => this.onTouchEnd(event), { passive: false });
 
         this.canvas.setAttribute('tabindex', '0');
         this.canvas.focus();
@@ -221,6 +243,158 @@ export class CameraController {
         event.preventDefault();
     }
 
+    /**
+     * Calculate the distance between two touch points
+     */
+    private getPinchDistance(touch1: Touch, touch2: Touch): number {
+        const dx = touch2.clientX - touch1.clientX;
+        const dy = touch2.clientY - touch1.clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    /**
+     * Get the center point between two touches
+     */
+    private getTouchCenter(touch1: Touch, touch2: Touch): { x: number; y: number } {
+        return {
+            x: (touch1.clientX + touch2.clientX) / 2,
+            y: (touch1.clientY + touch2.clientY) / 2
+        };
+    }
+
+    /**
+     * Handle touch start - initialize touch tracking
+     * Single finger: prepare for orbit
+     * Two fingers: prepare for pan and pinch
+     */
+    private onTouchStart(event: TouchEvent): void {
+        if (!this.isEnabled) return;
+        event.preventDefault();
+
+        const touches = event.touches;
+        this.touch.isActive = true;
+        this.touch.touchCount = touches.length;
+
+        if (touches.length === 1) {
+            // Single touch - orbit mode
+            this.touch.startX = touches[0].clientX;
+            this.touch.startY = touches[0].clientY;
+            this.touch.currentX = touches[0].clientX;
+            this.touch.currentY = touches[0].clientY;
+        } else if (touches.length === 2) {
+            // Two finger touch - pan and pinch mode
+            this.touch.touch1.x = touches[0].clientX;
+            this.touch.touch1.y = touches[0].clientY;
+            this.touch.touch2.x = touches[1].clientX;
+            this.touch.touch2.y = touches[1].clientY;
+
+            // Calculate initial pinch distance for zoom
+            const pinchDistance = this.getPinchDistance(touches[0], touches[1]);
+            this.touch.initialPinchDistance = pinchDistance;
+            this.touch.lastPinchDistance = pinchDistance;
+        }
+    }
+
+    /**
+     * Handle touch move - process gestures
+     * Single finger: orbit camera around target
+     * Two fingers: pan view + pinch to zoom
+     */
+    private onTouchMove(event: TouchEvent): void {
+        if (!this.isEnabled || !this.touch.isActive) return;
+        event.preventDefault();
+
+        const touches = event.touches;
+
+        if (touches.length === 1 && this.touch.touchCount === 1) {
+            // Single touch drag - orbit camera (like left mouse button)
+            const deltaX = touches[0].clientX - this.touch.currentX;
+            const deltaY = touches[0].clientY - this.touch.currentY;
+
+            // Apply rotation with touch-specific sensitivity
+            const touchRotateSpeed = this.rotateSpeed * 1.5;
+            this.spherical.theta -= deltaX * touchRotateSpeed;
+            this.spherical.phi = Math.max(
+                0.1,
+                Math.min(Math.PI - 0.1, this.spherical.phi + deltaY * touchRotateSpeed)
+            );
+
+            this.updateCameraPosition();
+
+            // Update current position
+            this.touch.currentX = touches[0].clientX;
+            this.touch.currentY = touches[0].clientY;
+
+        } else if (touches.length === 2) {
+            // Two finger gesture - handle both pan and pinch
+
+            // Calculate pinch zoom
+            const currentPinchDistance = this.getPinchDistance(touches[0], touches[1]);
+            const pinchDelta = this.touch.lastPinchDistance / currentPinchDistance;
+
+            // Apply zoom based on pinch
+            if (Math.abs(pinchDelta - 1) > 0.01) {
+                this.spherical.radius = Math.max(
+                    1,
+                    Math.min(1000, this.spherical.radius * pinchDelta)
+                );
+            }
+            this.touch.lastPinchDistance = currentPinchDistance;
+
+            // Calculate pan (two-finger drag)
+            const currentCenter = this.getTouchCenter(touches[0], touches[1]);
+            const previousCenter = {
+                x: (this.touch.touch1.x + this.touch.touch2.x) / 2,
+                y: (this.touch.touch1.y + this.touch.touch2.y) / 2
+            };
+
+            const panDeltaX = currentCenter.x - previousCenter.x;
+            const panDeltaY = currentCenter.y - previousCenter.y;
+
+            // Apply pan (like right mouse button drag)
+            const cameraDirection = new THREE.Vector3();
+            this.camera.getWorldDirection(cameraDirection);
+
+            const right = new THREE.Vector3();
+            right.crossVectors(cameraDirection, this.camera.up).normalize();
+
+            const up = new THREE.Vector3();
+            up.crossVectors(right, cameraDirection).normalize();
+
+            const touchPanSpeed = this.panSpeed * 0.15;
+            this.target.add(right.multiplyScalar(-panDeltaX * touchPanSpeed));
+            this.target.add(up.multiplyScalar(panDeltaY * touchPanSpeed));
+
+            this.updateCameraPosition();
+
+            // Update touch positions
+            this.touch.touch1.x = touches[0].clientX;
+            this.touch.touch1.y = touches[0].clientY;
+            this.touch.touch2.x = touches[1].clientX;
+            this.touch.touch2.y = touches[1].clientY;
+        }
+    }
+
+    /**
+     * Handle touch end - reset touch state
+     */
+    private onTouchEnd(event: TouchEvent): void {
+        event.preventDefault();
+
+        const touches = event.touches;
+
+        if (touches.length === 0) {
+            // All fingers lifted - reset state
+            this.touch.isActive = false;
+            this.touch.touchCount = 0;
+        } else if (touches.length === 1) {
+            // Went from 2 fingers to 1 - switch to orbit mode
+            this.touch.touchCount = 1;
+            this.touch.currentX = touches[0].clientX;
+            this.touch.currentY = touches[0].clientY;
+        }
+    }
+
     update(): void {
         if (!this.isEnabled) return;
 
@@ -360,5 +534,10 @@ export class CameraController {
         this.canvas.removeEventListener('mousemove', (event) => this.onMouseMove(event));
         this.canvas.removeEventListener('mouseup', (event) => this.onMouseUp(event));
         this.canvas.removeEventListener('wheel', (event) => this.onWheel(event));
+        // Clean up touch event listeners
+        this.canvas.removeEventListener('touchstart', (event) => this.onTouchStart(event));
+        this.canvas.removeEventListener('touchmove', (event) => this.onTouchMove(event));
+        this.canvas.removeEventListener('touchend', (event) => this.onTouchEnd(event));
+        this.canvas.removeEventListener('touchcancel', (event) => this.onTouchEnd(event));
     }
 }
