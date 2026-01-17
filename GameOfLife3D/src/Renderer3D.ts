@@ -10,6 +10,8 @@ export interface RenderSettings {
     edgeWidth?: number;
     showGridLines: boolean;
     showGenerationLabels: boolean;
+    edgeColorCycling?: boolean;
+    edgeColorAngle?: number;
 }
 
 export class Renderer3D {
@@ -34,6 +36,8 @@ export class Renderer3D {
     private edgeWidth: number = 0.05;
     private showGridLines: boolean = true;
     private showGenerationLabels: boolean = true;
+    private edgeColorCycling: boolean = true;
+    private edgeColorAngle: number = 180;
 
     private maxInstances: number = 200 * 200 * 100;
     private currentInstanceCount: number = 0;
@@ -283,6 +287,20 @@ export class Renderer3D {
             this.showGenerationLabels = settings.showGenerationLabels;
             this.updateGenerationLabels();
         }
+        if (settings.edgeColorCycling !== undefined) {
+            this.edgeColorCycling = settings.edgeColorCycling;
+            this.recreateInstancedMesh();
+        }
+        if (settings.edgeColorAngle !== undefined) {
+            this.edgeColorAngle = settings.edgeColorAngle;
+            this.updateEdgeColorAngle();
+        }
+    }
+
+    private updateEdgeColorAngle(): void {
+        if (this.edgeColorCycling && this.wireframeMesh && this.wireframeMesh.material instanceof THREE.ShaderMaterial) {
+            this.wireframeMesh.material.uniforms.hueAngle.value = this.edgeColorAngle;
+        }
     }
 
     private recreateInstancedMesh(): void {
@@ -361,13 +379,142 @@ export class Renderer3D {
             `
         });
 
-        // Create wireframe mesh
-        const wireframeMaterial = new THREE.MeshBasicMaterial({
-            color: new THREE.Color(this.edgeColor),
-            wireframe: true,
-            transparent: true,
-            opacity: 0.8
-        });
+        // Create wireframe mesh - either with color cycling or static white
+        let wireframeMaterial: THREE.Material;
+        if (this.edgeColorCycling) {
+            wireframeMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    minZ: { value: 0.0 },
+                    maxZ: { value: 50.0 },
+                    time: { value: 0.0 },
+                    hueAngle: { value: this.edgeColorAngle }
+                },
+                vertexShader: `
+                    varying vec3 vWorldPosition;
+                    void main() {
+                        vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                        vWorldPosition = worldPosition.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform float minZ;
+                    uniform float maxZ;
+                    uniform float time;
+                    uniform float hueAngle;
+                    varying vec3 vWorldPosition;
+
+                    // RGB to HSL conversion
+                    vec3 rgb2hsl(vec3 c) {
+                        float maxC = max(max(c.r, c.g), c.b);
+                        float minC = min(min(c.r, c.g), c.b);
+                        float l = (maxC + minC) / 2.0;
+
+                        if (maxC == minC) {
+                            return vec3(0.0, 0.0, l);
+                        }
+
+                        float d = maxC - minC;
+                        float s = l > 0.5 ? d / (2.0 - maxC - minC) : d / (maxC + minC);
+
+                        float h;
+                        if (maxC == c.r) {
+                            h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0);
+                        } else if (maxC == c.g) {
+                            h = (c.b - c.r) / d + 2.0;
+                        } else {
+                            h = (c.r - c.g) / d + 4.0;
+                        }
+                        h /= 6.0;
+
+                        return vec3(h, s, l);
+                    }
+
+                    // HSL to RGB conversion
+                    float hue2rgb(float p, float q, float t) {
+                        if (t < 0.0) t += 1.0;
+                        if (t > 1.0) t -= 1.0;
+                        if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
+                        if (t < 1.0/2.0) return q;
+                        if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
+                        return p;
+                    }
+
+                    vec3 hsl2rgb(vec3 hsl) {
+                        float h = hsl.x;
+                        float s = hsl.y;
+                        float l = hsl.z;
+
+                        if (s == 0.0) {
+                            return vec3(l, l, l);
+                        }
+
+                        float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
+                        float p = 2.0 * l - q;
+
+                        return vec3(
+                            hue2rgb(p, q, h + 1.0/3.0),
+                            hue2rgb(p, q, h),
+                            hue2rgb(p, q, h - 1.0/3.0)
+                        );
+                    }
+
+                    void main() {
+                        float range = maxZ - minZ;
+                        float offset = mod(time, range);
+                        float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
+
+                        // Normalize position to 0-1 range
+                        float t = adjustedY / range;
+
+                        // Calculate face color (same as face shader)
+                        vec3 blue = vec3(0.0, 0.0, 1.0);
+                        vec3 green = vec3(0.0, 1.0, 0.0);
+                        vec3 yellow = vec3(1.0, 1.0, 0.0);
+                        vec3 black = vec3(0.0, 0.0, 0.0);
+                        vec3 purple = vec3(0.5, 0.0, 0.5);
+
+                        vec3 faceColor;
+                        float segment = t * 5.0;
+
+                        if (segment < 1.0) {
+                            faceColor = mix(blue, green, segment);
+                        } else if (segment < 2.0) {
+                            faceColor = mix(green, yellow, segment - 1.0);
+                        } else if (segment < 3.0) {
+                            faceColor = mix(yellow, black, segment - 2.0);
+                        } else if (segment < 4.0) {
+                            faceColor = mix(black, purple, segment - 3.0);
+                        } else {
+                            faceColor = mix(purple, blue, segment - 4.0);
+                        }
+
+                        // Convert to HSL, rotate hue by angle, convert back
+                        vec3 hsl = rgb2hsl(faceColor);
+                        hsl.x = mod(hsl.x + hueAngle / 360.0, 1.0);
+
+                        // For dark colors (like black), boost saturation and lightness
+                        if (hsl.z < 0.1) {
+                            hsl.z = 0.5;
+                            hsl.y = 1.0;
+                        }
+
+                        vec3 edgeColor = hsl2rgb(hsl);
+
+                        gl_FragColor = vec4(edgeColor, 0.8);
+                    }
+                `,
+                wireframe: true,
+                transparent: true
+            });
+        } else {
+            wireframeMaterial = new THREE.MeshBasicMaterial({
+                color: new THREE.Color(this.edgeColor),
+                wireframe: true,
+                transparent: true,
+                opacity: 0.8
+            });
+        }
 
         this.instancedMesh = new THREE.InstancedMesh(geometry, material, this.maxInstances);
         this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -385,7 +532,8 @@ export class Renderer3D {
             this.instancedMesh.material.uniforms.startColor.value.set(this.gradientStartColor);
             this.instancedMesh.material.uniforms.endColor.value.set(this.gradientEndColor);
         }
-        if (this.wireframeMesh && this.wireframeMesh.material instanceof THREE.MeshBasicMaterial) {
+        // Update wireframe edge color when not using color cycling
+        if (!this.edgeColorCycling && this.wireframeMesh && this.wireframeMesh.material instanceof THREE.MeshBasicMaterial) {
             this.wireframeMesh.material.color.set(this.edgeColor);
         }
     }
@@ -441,6 +589,11 @@ export class Renderer3D {
         if (this.instancedMesh && this.instancedMesh.material instanceof THREE.ShaderMaterial) {
             this.instancedMesh.material.uniforms.minZ.value = displayStart;
             this.instancedMesh.material.uniforms.maxZ.value = displayEnd;
+        }
+        // Also update wireframe shader uniforms to keep edge colors in sync
+        if (this.wireframeMesh && this.wireframeMesh.material instanceof THREE.ShaderMaterial) {
+            this.wireframeMesh.material.uniforms.minZ.value = displayStart;
+            this.wireframeMesh.material.uniforms.maxZ.value = displayEnd;
         }
 
         const matrix = new THREE.Matrix4();
@@ -536,6 +689,13 @@ export class Renderer3D {
             const range = this.instancedMesh.material.uniforms.maxZ.value -
                          this.instancedMesh.material.uniforms.minZ.value;
             this.instancedMesh.material.uniforms.time.value = normalizedTime * range;
+        }
+
+        // Sync wireframe shader time uniform for edge color cycling
+        if (this.wireframeMesh && this.wireframeMesh.material instanceof THREE.ShaderMaterial) {
+            const range = this.wireframeMesh.material.uniforms.maxZ.value -
+                         this.wireframeMesh.material.uniforms.minZ.value;
+            this.wireframeMesh.material.uniforms.time.value = normalizedTime * range;
         }
 
         // Update star twinkle animation
