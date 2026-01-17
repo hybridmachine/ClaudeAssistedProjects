@@ -205,7 +205,8 @@ export class CameraController {
             this.spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, this.spherical.phi + deltaY * this.rotateSpeed));
 
             this.updateCameraPosition();
-        } else if (this.mouse.button === 2) {
+        } else if (this.mouse.button === 1 || this.mouse.button === 2) {
+            // Middle mouse button (1) or right mouse button (2) for panning
             const cameraDirection = new THREE.Vector3();
             this.camera.getWorldDirection(cameraDirection);
 
