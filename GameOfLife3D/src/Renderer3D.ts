@@ -361,12 +361,68 @@ export class Renderer3D {
             `
         });
 
-        // Create wireframe mesh
-        const wireframeMaterial = new THREE.MeshBasicMaterial({
-            color: new THREE.Color(this.edgeColor),
+        // Create wireframe mesh with opposite color cycling shader
+        const wireframeMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                minZ: { value: 0.0 },
+                maxZ: { value: 50.0 },
+                time: { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec3 vWorldPosition;
+                void main() {
+                    vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform float minZ;
+                uniform float maxZ;
+                uniform float time;
+                varying vec3 vWorldPosition;
+
+                void main() {
+                    float range = maxZ - minZ;
+                    float offset = mod(time, range);
+                    float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
+
+                    // Normalize position to 0-1 range
+                    float t = adjustedY / range;
+
+                    // Define opposite colors (color wheel complements):
+                    // Blue opposite -> Orange
+                    // Green opposite -> Magenta
+                    // Yellow opposite -> Violet
+                    // Black opposite -> White
+                    // Purple opposite -> Yellow-Green
+                    vec3 orange = vec3(1.0, 0.5, 0.0);
+                    vec3 magenta = vec3(1.0, 0.0, 1.0);
+                    vec3 violet = vec3(0.5, 0.0, 1.0);
+                    vec3 white = vec3(1.0, 1.0, 1.0);
+                    vec3 yellowGreen = vec3(0.5, 1.0, 0.5);
+
+                    // Cycle through 5 opposite colors in same pattern as faces
+                    vec3 color;
+                    float segment = t * 5.0;
+
+                    if (segment < 1.0) {
+                        color = mix(orange, magenta, segment);
+                    } else if (segment < 2.0) {
+                        color = mix(magenta, violet, segment - 1.0);
+                    } else if (segment < 3.0) {
+                        color = mix(violet, white, segment - 2.0);
+                    } else if (segment < 4.0) {
+                        color = mix(white, yellowGreen, segment - 3.0);
+                    } else {
+                        color = mix(yellowGreen, orange, segment - 4.0);
+                    }
+
+                    gl_FragColor = vec4(color, 0.8);
+                }
+            `,
             wireframe: true,
-            transparent: true,
-            opacity: 0.8
+            transparent: true
         });
 
         this.instancedMesh = new THREE.InstancedMesh(geometry, material, this.maxInstances);
@@ -385,9 +441,7 @@ export class Renderer3D {
             this.instancedMesh.material.uniforms.startColor.value.set(this.gradientStartColor);
             this.instancedMesh.material.uniforms.endColor.value.set(this.gradientEndColor);
         }
-        if (this.wireframeMesh && this.wireframeMesh.material instanceof THREE.MeshBasicMaterial) {
-            this.wireframeMesh.material.color.set(this.edgeColor);
-        }
+        // Wireframe now uses ShaderMaterial with automatic color cycling - no manual color update needed
     }
 
     private updateGridLines(): void {
@@ -441,6 +495,11 @@ export class Renderer3D {
         if (this.instancedMesh && this.instancedMesh.material instanceof THREE.ShaderMaterial) {
             this.instancedMesh.material.uniforms.minZ.value = displayStart;
             this.instancedMesh.material.uniforms.maxZ.value = displayEnd;
+        }
+        // Also update wireframe shader uniforms to keep edge colors in sync
+        if (this.wireframeMesh && this.wireframeMesh.material instanceof THREE.ShaderMaterial) {
+            this.wireframeMesh.material.uniforms.minZ.value = displayStart;
+            this.wireframeMesh.material.uniforms.maxZ.value = displayEnd;
         }
 
         const matrix = new THREE.Matrix4();
@@ -536,6 +595,13 @@ export class Renderer3D {
             const range = this.instancedMesh.material.uniforms.maxZ.value -
                          this.instancedMesh.material.uniforms.minZ.value;
             this.instancedMesh.material.uniforms.time.value = normalizedTime * range;
+        }
+
+        // Sync wireframe shader time uniform for edge color cycling
+        if (this.wireframeMesh && this.wireframeMesh.material instanceof THREE.ShaderMaterial) {
+            const range = this.wireframeMesh.material.uniforms.maxZ.value -
+                         this.wireframeMesh.material.uniforms.minZ.value;
+            this.wireframeMesh.material.uniforms.time.value = normalizedTime * range;
         }
 
         // Update star twinkle animation
