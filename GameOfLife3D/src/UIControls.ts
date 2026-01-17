@@ -54,7 +54,7 @@ export class UIControls {
             'grid-size', 'generation-count', 'display-start', 'display-end',
             'compute-btn', 'play-btn', 'pause-btn', 'step-back', 'step-forward',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
-            'edge-color-cycling',
+            'edge-color-cycling', 'edge-color-angle', 'angle-value',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
             'reset-camera',
             'status-generation', 'status-fps', 'status-cells'
@@ -167,6 +167,13 @@ export class UIControls {
             this.elements['edge-color-cycling'].addEventListener('change', (e) => {
                 const target = e.target as HTMLInputElement;
                 this.onEdgeColorCyclingChange(target.checked);
+            });
+        }
+
+        if (this.elements['edge-color-angle']) {
+            this.elements['edge-color-angle'].addEventListener('input', (e) => {
+                const target = e.target as HTMLInputElement;
+                this.onEdgeColorAngleChange(parseInt(target.value));
             });
         }
 
@@ -352,6 +359,14 @@ export class UIControls {
 
     private onEdgeColorCyclingChange(enabled: boolean): void {
         this.renderer.setRenderSettings({ edgeColorCycling: enabled });
+        this.renderCurrentView();
+    }
+
+    private onEdgeColorAngleChange(angle: number): void {
+        if (this.elements['angle-value']) {
+            this.elements['angle-value'].textContent = `${angle}°`;
+        }
+        this.renderer.setRenderSettings({ edgeColorAngle: angle });
         this.renderCurrentView();
     }
 

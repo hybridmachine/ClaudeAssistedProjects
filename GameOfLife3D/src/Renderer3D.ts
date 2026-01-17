@@ -11,6 +11,7 @@ export interface RenderSettings {
     showGridLines: boolean;
     showGenerationLabels: boolean;
     edgeColorCycling?: boolean;
+    edgeColorAngle?: number;
 }
 
 export class Renderer3D {
@@ -36,6 +37,7 @@ export class Renderer3D {
     private showGridLines: boolean = true;
     private showGenerationLabels: boolean = true;
     private edgeColorCycling: boolean = true;
+    private edgeColorAngle: number = 180;
 
     private maxInstances: number = 200 * 200 * 100;
     private currentInstanceCount: number = 0;
@@ -289,6 +291,16 @@ export class Renderer3D {
             this.edgeColorCycling = settings.edgeColorCycling;
             this.recreateInstancedMesh();
         }
+        if (settings.edgeColorAngle !== undefined) {
+            this.edgeColorAngle = settings.edgeColorAngle;
+            this.updateEdgeColorAngle();
+        }
+    }
+
+    private updateEdgeColorAngle(): void {
+        if (this.edgeColorCycling && this.wireframeMesh && this.wireframeMesh.material instanceof THREE.ShaderMaterial) {
+            this.wireframeMesh.material.uniforms.hueAngle.value = this.edgeColorAngle;
+        }
     }
 
     private recreateInstancedMesh(): void {
@@ -374,7 +386,8 @@ export class Renderer3D {
                 uniforms: {
                     minZ: { value: 0.0 },
                     maxZ: { value: 50.0 },
-                    time: { value: 0.0 }
+                    time: { value: 0.0 },
+                    hueAngle: { value: this.edgeColorAngle }
                 },
                 vertexShader: `
                     varying vec3 vWorldPosition;
@@ -388,7 +401,63 @@ export class Renderer3D {
                     uniform float minZ;
                     uniform float maxZ;
                     uniform float time;
+                    uniform float hueAngle;
                     varying vec3 vWorldPosition;
+
+                    // RGB to HSL conversion
+                    vec3 rgb2hsl(vec3 c) {
+                        float maxC = max(max(c.r, c.g), c.b);
+                        float minC = min(min(c.r, c.g), c.b);
+                        float l = (maxC + minC) / 2.0;
+
+                        if (maxC == minC) {
+                            return vec3(0.0, 0.0, l);
+                        }
+
+                        float d = maxC - minC;
+                        float s = l > 0.5 ? d / (2.0 - maxC - minC) : d / (maxC + minC);
+
+                        float h;
+                        if (maxC == c.r) {
+                            h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0);
+                        } else if (maxC == c.g) {
+                            h = (c.b - c.r) / d + 2.0;
+                        } else {
+                            h = (c.r - c.g) / d + 4.0;
+                        }
+                        h /= 6.0;
+
+                        return vec3(h, s, l);
+                    }
+
+                    // HSL to RGB conversion
+                    float hue2rgb(float p, float q, float t) {
+                        if (t < 0.0) t += 1.0;
+                        if (t > 1.0) t -= 1.0;
+                        if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
+                        if (t < 1.0/2.0) return q;
+                        if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
+                        return p;
+                    }
+
+                    vec3 hsl2rgb(vec3 hsl) {
+                        float h = hsl.x;
+                        float s = hsl.y;
+                        float l = hsl.z;
+
+                        if (s == 0.0) {
+                            return vec3(l, l, l);
+                        }
+
+                        float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
+                        float p = 2.0 * l - q;
+
+                        return vec3(
+                            hue2rgb(p, q, h + 1.0/3.0),
+                            hue2rgb(p, q, h),
+                            hue2rgb(p, q, h - 1.0/3.0)
+                        );
+                    }
 
                     void main() {
                         float range = maxZ - minZ;
@@ -398,35 +467,41 @@ export class Renderer3D {
                         // Normalize position to 0-1 range
                         float t = adjustedY / range;
 
-                        // Define opposite colors (color wheel complements):
-                        // Blue opposite -> Orange
-                        // Green opposite -> Magenta
-                        // Yellow opposite -> Violet
-                        // Black opposite -> White
-                        // Purple opposite -> Yellow-Green
-                        vec3 orange = vec3(1.0, 0.5, 0.0);
-                        vec3 magenta = vec3(1.0, 0.0, 1.0);
-                        vec3 violet = vec3(0.5, 0.0, 1.0);
-                        vec3 white = vec3(1.0, 1.0, 1.0);
-                        vec3 yellowGreen = vec3(0.5, 1.0, 0.5);
+                        // Calculate face color (same as face shader)
+                        vec3 blue = vec3(0.0, 0.0, 1.0);
+                        vec3 green = vec3(0.0, 1.0, 0.0);
+                        vec3 yellow = vec3(1.0, 1.0, 0.0);
+                        vec3 black = vec3(0.0, 0.0, 0.0);
+                        vec3 purple = vec3(0.5, 0.0, 0.5);
 
-                        // Cycle through 5 opposite colors in same pattern as faces
-                        vec3 color;
+                        vec3 faceColor;
                         float segment = t * 5.0;
 
                         if (segment < 1.0) {
-                            color = mix(orange, magenta, segment);
+                            faceColor = mix(blue, green, segment);
                         } else if (segment < 2.0) {
-                            color = mix(magenta, violet, segment - 1.0);
+                            faceColor = mix(green, yellow, segment - 1.0);
                         } else if (segment < 3.0) {
-                            color = mix(violet, white, segment - 2.0);
+                            faceColor = mix(yellow, black, segment - 2.0);
                         } else if (segment < 4.0) {
-                            color = mix(white, yellowGreen, segment - 3.0);
+                            faceColor = mix(black, purple, segment - 3.0);
                         } else {
-                            color = mix(yellowGreen, orange, segment - 4.0);
+                            faceColor = mix(purple, blue, segment - 4.0);
                         }
 
-                        gl_FragColor = vec4(color, 0.8);
+                        // Convert to HSL, rotate hue by angle, convert back
+                        vec3 hsl = rgb2hsl(faceColor);
+                        hsl.x = mod(hsl.x + hueAngle / 360.0, 1.0);
+
+                        // For dark colors (like black), boost saturation and lightness
+                        if (hsl.z < 0.1) {
+                            hsl.z = 0.5;
+                            hsl.y = 1.0;
+                        }
+
+                        vec3 edgeColor = hsl2rgb(hsl);
+
+                        gl_FragColor = vec4(edgeColor, 0.8);
                     }
                 `,
                 wireframe: true,
