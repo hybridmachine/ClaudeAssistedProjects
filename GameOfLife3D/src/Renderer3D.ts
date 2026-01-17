@@ -481,15 +481,15 @@ export class Renderer3D {
     private createGenerationLabels(start: number, end: number): void {
         this.updateGenerationLabels();
 
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        if (!context) return;
-
-        canvas.width = 128;
-        canvas.height = 32;
-
         for (let i = start; i <= end; i += Math.max(1, Math.floor((end - start) / 10))) {
-            context.clearRect(0, 0, canvas.width, canvas.height);
+            // Create a new canvas for each label to avoid shared texture reference bug
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            if (!context) continue;
+
+            canvas.width = 128;
+            canvas.height = 32;
+
             context.fillStyle = '#ffffff';
             context.font = '16px Arial';
             context.textAlign = 'center';
