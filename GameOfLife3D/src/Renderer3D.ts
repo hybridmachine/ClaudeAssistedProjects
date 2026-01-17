@@ -504,6 +504,7 @@ export class Renderer3D {
                 canvas.height,
                 THREE.RGBAFormat
             );
+            texture.flipY = true;
             texture.needsUpdate = true;
 
             const material = new THREE.SpriteMaterial({ map: texture });
