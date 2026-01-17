@@ -481,21 +481,32 @@ export class Renderer3D {
     private createGenerationLabels(start: number, end: number): void {
         this.updateGenerationLabels();
 
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        if (!context) return;
+        const step = Math.max(1, Math.floor((end - start) / 10));
 
-        canvas.width = 128;
-        canvas.height = 32;
+        for (let i = start; i <= end; i += step) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            if (!context) continue;
 
-        for (let i = start; i <= end; i += Math.max(1, Math.floor((end - start) / 10))) {
-            context.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.width = 128;
+            canvas.height = 32;
+
             context.fillStyle = '#ffffff';
             context.font = '16px Arial';
             context.textAlign = 'center';
             context.fillText(`Gen ${i}`, canvas.width / 2, canvas.height / 2 + 6);
 
-            const texture = new THREE.CanvasTexture(canvas);
+            // Copy canvas data to ImageData to ensure texture independence
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const texture = new THREE.DataTexture(
+                imageData.data,
+                canvas.width,
+                canvas.height,
+                THREE.RGBAFormat
+            );
+            texture.flipY = true;
+            texture.needsUpdate = true;
+
             const material = new THREE.SpriteMaterial({ map: texture });
             const sprite = new THREE.Sprite(material);
 
