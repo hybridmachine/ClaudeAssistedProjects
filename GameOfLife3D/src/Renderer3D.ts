@@ -10,6 +10,7 @@ export interface RenderSettings {
     edgeWidth?: number;
     showGridLines: boolean;
     showGenerationLabels: boolean;
+    edgeColorCycling?: boolean;
 }
 
 export class Renderer3D {
@@ -34,6 +35,7 @@ export class Renderer3D {
     private edgeWidth: number = 0.05;
     private showGridLines: boolean = true;
     private showGenerationLabels: boolean = true;
+    private edgeColorCycling: boolean = true;
 
     private maxInstances: number = 200 * 200 * 100;
     private currentInstanceCount: number = 0;
@@ -283,6 +285,10 @@ export class Renderer3D {
             this.showGenerationLabels = settings.showGenerationLabels;
             this.updateGenerationLabels();
         }
+        if (settings.edgeColorCycling !== undefined) {
+            this.edgeColorCycling = settings.edgeColorCycling;
+            this.recreateInstancedMesh();
+        }
     }
 
     private recreateInstancedMesh(): void {
@@ -361,69 +367,79 @@ export class Renderer3D {
             `
         });
 
-        // Create wireframe mesh with opposite color cycling shader
-        const wireframeMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                minZ: { value: 0.0 },
-                maxZ: { value: 50.0 },
-                time: { value: 0.0 }
-            },
-            vertexShader: `
-                varying vec3 vWorldPosition;
-                void main() {
-                    vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
-                    vWorldPosition = worldPosition.xyz;
-                    gl_Position = projectionMatrix * viewMatrix * worldPosition;
-                }
-            `,
-            fragmentShader: `
-                uniform float minZ;
-                uniform float maxZ;
-                uniform float time;
-                varying vec3 vWorldPosition;
-
-                void main() {
-                    float range = maxZ - minZ;
-                    float offset = mod(time, range);
-                    float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
-
-                    // Normalize position to 0-1 range
-                    float t = adjustedY / range;
-
-                    // Define opposite colors (color wheel complements):
-                    // Blue opposite -> Orange
-                    // Green opposite -> Magenta
-                    // Yellow opposite -> Violet
-                    // Black opposite -> White
-                    // Purple opposite -> Yellow-Green
-                    vec3 orange = vec3(1.0, 0.5, 0.0);
-                    vec3 magenta = vec3(1.0, 0.0, 1.0);
-                    vec3 violet = vec3(0.5, 0.0, 1.0);
-                    vec3 white = vec3(1.0, 1.0, 1.0);
-                    vec3 yellowGreen = vec3(0.5, 1.0, 0.5);
-
-                    // Cycle through 5 opposite colors in same pattern as faces
-                    vec3 color;
-                    float segment = t * 5.0;
-
-                    if (segment < 1.0) {
-                        color = mix(orange, magenta, segment);
-                    } else if (segment < 2.0) {
-                        color = mix(magenta, violet, segment - 1.0);
-                    } else if (segment < 3.0) {
-                        color = mix(violet, white, segment - 2.0);
-                    } else if (segment < 4.0) {
-                        color = mix(white, yellowGreen, segment - 3.0);
-                    } else {
-                        color = mix(yellowGreen, orange, segment - 4.0);
+        // Create wireframe mesh - either with color cycling or static white
+        let wireframeMaterial: THREE.Material;
+        if (this.edgeColorCycling) {
+            wireframeMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    minZ: { value: 0.0 },
+                    maxZ: { value: 50.0 },
+                    time: { value: 0.0 }
+                },
+                vertexShader: `
+                    varying vec3 vWorldPosition;
+                    void main() {
+                        vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                        vWorldPosition = worldPosition.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * worldPosition;
                     }
+                `,
+                fragmentShader: `
+                    uniform float minZ;
+                    uniform float maxZ;
+                    uniform float time;
+                    varying vec3 vWorldPosition;
 
-                    gl_FragColor = vec4(color, 0.8);
-                }
-            `,
-            wireframe: true,
-            transparent: true
-        });
+                    void main() {
+                        float range = maxZ - minZ;
+                        float offset = mod(time, range);
+                        float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
+
+                        // Normalize position to 0-1 range
+                        float t = adjustedY / range;
+
+                        // Define opposite colors (color wheel complements):
+                        // Blue opposite -> Orange
+                        // Green opposite -> Magenta
+                        // Yellow opposite -> Violet
+                        // Black opposite -> White
+                        // Purple opposite -> Yellow-Green
+                        vec3 orange = vec3(1.0, 0.5, 0.0);
+                        vec3 magenta = vec3(1.0, 0.0, 1.0);
+                        vec3 violet = vec3(0.5, 0.0, 1.0);
+                        vec3 white = vec3(1.0, 1.0, 1.0);
+                        vec3 yellowGreen = vec3(0.5, 1.0, 0.5);
+
+                        // Cycle through 5 opposite colors in same pattern as faces
+                        vec3 color;
+                        float segment = t * 5.0;
+
+                        if (segment < 1.0) {
+                            color = mix(orange, magenta, segment);
+                        } else if (segment < 2.0) {
+                            color = mix(magenta, violet, segment - 1.0);
+                        } else if (segment < 3.0) {
+                            color = mix(violet, white, segment - 2.0);
+                        } else if (segment < 4.0) {
+                            color = mix(white, yellowGreen, segment - 3.0);
+                        } else {
+                            color = mix(yellowGreen, orange, segment - 4.0);
+                        }
+
+                        gl_FragColor = vec4(color, 0.8);
+                    }
+                `,
+                wireframe: true,
+                transparent: true
+            });
+        } else {
+            wireframeMaterial = new THREE.MeshBasicMaterial({
+                color: new THREE.Color(this.edgeColor),
+                wireframe: true,
+                transparent: true,
+                opacity: 0.8
+            });
+        }
 
         this.instancedMesh = new THREE.InstancedMesh(geometry, material, this.maxInstances);
         this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -441,7 +457,10 @@ export class Renderer3D {
             this.instancedMesh.material.uniforms.startColor.value.set(this.gradientStartColor);
             this.instancedMesh.material.uniforms.endColor.value.set(this.gradientEndColor);
         }
-        // Wireframe now uses ShaderMaterial with automatic color cycling - no manual color update needed
+        // Update wireframe edge color when not using color cycling
+        if (!this.edgeColorCycling && this.wireframeMesh && this.wireframeMesh.material instanceof THREE.MeshBasicMaterial) {
+            this.wireframeMesh.material.color.set(this.edgeColor);
+        }
     }
 
     private updateGridLines(): void {
