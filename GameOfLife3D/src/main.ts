@@ -78,6 +78,7 @@ class GameOfLife3D {
         if (initialPattern) {
             this.gameEngine.initializeFromPattern(initialPattern);
             this.gameEngine.computeGenerations(50);
+            this.uiControls.syncDisplayRange();
             this.updateView();
         }
     }
