@@ -62,30 +62,54 @@ export class CameraController {
 
     private isEnabled = true;
 
+    // Bound event handlers for proper cleanup
+    private boundOnKeyDown: (event: KeyboardEvent) => void;
+    private boundOnKeyUp: (event: KeyboardEvent) => void;
+    private boundOnMouseDown: (event: MouseEvent) => void;
+    private boundOnMouseMove: (event: MouseEvent) => void;
+    private boundOnMouseUp: (event: MouseEvent) => void;
+    private boundOnWheel: (event: WheelEvent) => void;
+    private boundOnTouchStart: (event: TouchEvent) => void;
+    private boundOnTouchMove: (event: TouchEvent) => void;
+    private boundOnTouchEnd: (event: TouchEvent) => void;
+    private boundOnContextMenu: (event: Event) => void;
+
     constructor(camera: THREE.PerspectiveCamera, canvas: HTMLCanvasElement) {
         this.camera = camera;
         this.canvas = canvas;
+
+        // Bind event handlers to preserve references for cleanup
+        this.boundOnKeyDown = (event: KeyboardEvent) => this.onKeyDown(event);
+        this.boundOnKeyUp = (event: KeyboardEvent) => this.onKeyUp(event);
+        this.boundOnMouseDown = (event: MouseEvent) => this.onMouseDown(event);
+        this.boundOnMouseMove = (event: MouseEvent) => this.onMouseMove(event);
+        this.boundOnMouseUp = (event: MouseEvent) => this.onMouseUp(event);
+        this.boundOnWheel = (event: WheelEvent) => this.onWheel(event);
+        this.boundOnTouchStart = (event: TouchEvent) => this.onTouchStart(event);
+        this.boundOnTouchMove = (event: TouchEvent) => this.onTouchMove(event);
+        this.boundOnTouchEnd = (event: TouchEvent) => this.onTouchEnd(event);
+        this.boundOnContextMenu = (event: Event) => event.preventDefault();
 
         this.setupEventListeners();
         this.updateCameraPosition();
     }
 
     private setupEventListeners(): void {
-        document.addEventListener('keydown', (event) => this.onKeyDown(event));
-        document.addEventListener('keyup', (event) => this.onKeyUp(event));
+        document.addEventListener('keydown', this.boundOnKeyDown);
+        document.addEventListener('keyup', this.boundOnKeyUp);
 
-        this.canvas.addEventListener('mousedown', (event) => this.onMouseDown(event));
-        this.canvas.addEventListener('mousemove', (event) => this.onMouseMove(event));
-        this.canvas.addEventListener('mouseup', (event) => this.onMouseUp(event));
-        this.canvas.addEventListener('wheel', (event) => this.onWheel(event));
+        this.canvas.addEventListener('mousedown', this.boundOnMouseDown);
+        this.canvas.addEventListener('mousemove', this.boundOnMouseMove);
+        this.canvas.addEventListener('mouseup', this.boundOnMouseUp);
+        this.canvas.addEventListener('wheel', this.boundOnWheel);
 
-        this.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+        this.canvas.addEventListener('contextmenu', this.boundOnContextMenu);
 
         // Touch event listeners for mobile/tablet support
-        this.canvas.addEventListener('touchstart', (event) => this.onTouchStart(event), { passive: false });
-        this.canvas.addEventListener('touchmove', (event) => this.onTouchMove(event), { passive: false });
-        this.canvas.addEventListener('touchend', (event) => this.onTouchEnd(event), { passive: false });
-        this.canvas.addEventListener('touchcancel', (event) => this.onTouchEnd(event), { passive: false });
+        this.canvas.addEventListener('touchstart', this.boundOnTouchStart, { passive: false });
+        this.canvas.addEventListener('touchmove', this.boundOnTouchMove, { passive: false });
+        this.canvas.addEventListener('touchend', this.boundOnTouchEnd, { passive: false });
+        this.canvas.addEventListener('touchcancel', this.boundOnTouchEnd, { passive: false });
 
         this.canvas.setAttribute('tabindex', '0');
         this.canvas.focus();
@@ -529,16 +553,17 @@ export class CameraController {
     }
 
     dispose(): void {
-        document.removeEventListener('keydown', (event) => this.onKeyDown(event));
-        document.removeEventListener('keyup', (event) => this.onKeyUp(event));
-        this.canvas.removeEventListener('mousedown', (event) => this.onMouseDown(event));
-        this.canvas.removeEventListener('mousemove', (event) => this.onMouseMove(event));
-        this.canvas.removeEventListener('mouseup', (event) => this.onMouseUp(event));
-        this.canvas.removeEventListener('wheel', (event) => this.onWheel(event));
+        document.removeEventListener('keydown', this.boundOnKeyDown);
+        document.removeEventListener('keyup', this.boundOnKeyUp);
+        this.canvas.removeEventListener('mousedown', this.boundOnMouseDown);
+        this.canvas.removeEventListener('mousemove', this.boundOnMouseMove);
+        this.canvas.removeEventListener('mouseup', this.boundOnMouseUp);
+        this.canvas.removeEventListener('wheel', this.boundOnWheel);
+        this.canvas.removeEventListener('contextmenu', this.boundOnContextMenu);
         // Clean up touch event listeners
-        this.canvas.removeEventListener('touchstart', (event) => this.onTouchStart(event));
-        this.canvas.removeEventListener('touchmove', (event) => this.onTouchMove(event));
-        this.canvas.removeEventListener('touchend', (event) => this.onTouchEnd(event));
-        this.canvas.removeEventListener('touchcancel', (event) => this.onTouchEnd(event));
+        this.canvas.removeEventListener('touchstart', this.boundOnTouchStart);
+        this.canvas.removeEventListener('touchmove', this.boundOnTouchMove);
+        this.canvas.removeEventListener('touchend', this.boundOnTouchEnd);
+        this.canvas.removeEventListener('touchcancel', this.boundOnTouchEnd);
     }
 }
