@@ -118,6 +118,12 @@ export class CameraController {
     private onKeyDown(event: KeyboardEvent): void {
         if (!this.isEnabled) return;
 
+        // Allow typing in input fields
+        const target = event.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+            return;
+        }
+
         switch (event.code) {
             case 'KeyW':
             case 'ArrowUp':
@@ -163,6 +169,12 @@ export class CameraController {
 
     private onKeyUp(event: KeyboardEvent): void {
         if (!this.isEnabled) return;
+
+        // Allow typing in input fields
+        const target = event.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+            return;
+        }
 
         switch (event.code) {
             case 'KeyW':

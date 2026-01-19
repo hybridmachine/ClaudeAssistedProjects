@@ -166,6 +166,19 @@ input[type="color"] {
     cursor: pointer;
 }
 
+input[type="number"] {
+    /* Hide spinner buttons for cleaner direct entry */
+    -moz-appearance: textfield;
+    appearance: textfield;
+    text-align: center;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 input[type="checkbox"] {
     width: auto !important;
     margin-right: 8px !important;
