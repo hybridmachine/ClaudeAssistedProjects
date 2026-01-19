@@ -1,97 +1,177 @@
-# GameOfLife3D Requirements
+# GameOfLife3D
 
-## 1. Overview
-A 3D visualization of Conway's Game of Life where multiple generations are stacked vertically in 3D space, allowing users to explore the evolution of patterns through time as a three-dimensional structure.
+A browser-based 3D visualization of Conway's Game of Life. Watch cellular automata evolve through time as a stunning three-dimensional structure, with each generation stacked vertically in 3D space.
 
-## 2. Technical Requirements
+## Features
 
-### 2.1 Platform & Compatibility
-- **Browser-based**: Runs entirely in the browser with no plugins or additional software
-- **Browser Support**: Firefox, Chrome, and Edge (versions from 2022 or newer)
-- **Performance**: Real-time rendering at minimum 30 FPS for up to 100 rendered generations
-- **Technology Stack**: TypeScript, WebGL (via Three.js recommended), HTML5, CSS3
+- **3D Time Visualization**: Each generation renders in the X-Y plane with the Z-axis representing time progression
+- **Interactive Camera**: Full orbit, pan, zoom controls via mouse, keyboard, and touch
+- **Built-in Patterns**: Glider, Blinker, Pulsar, Gosper's Glider Gun, and R-pentomino
+- **Custom Pattern Support**: Load patterns in RLE (Run-Length Encoded) format
+- **Session Management**: Save and load complete sessions with all generations
+- **Visual Customization**: Adjustable cell colors, padding, grid lines, and edge color cycling
+- **Starfield Background**: Dynamic animated starfield with 5000 twinkling stars
+- **Performance Optimized**: Handles grids up to 200x200 with 100+ generations at 30+ FPS
 
-### 2.2 Rendering & Visualization
-- **Grid Layout**: 
-  - Generations rendered in X-Y plane
-  - Each successive generation at Z = generation_number (e.g., gen 0 at z=0, gen 1 at z=1)
-- **Cell Representation**:
-  - Live cells: Colored matte surface cubes
-  - Dead cells: Not rendered (empty space)
-  - Cell spacing: Configurable padding 0-100% (default 20%)
-  - Padding creates visual gap between adjacent cells
-- **Lighting**:
-  - 80% ambient light (even illumination)
-  - 20% directional light (subtle shadows/depth)
-- **Background**: 
-  - Starfield using actual astronomical star catalog data
-  - Static background (not affected by camera movement)
+## Getting Started
 
-## 3. Functional Requirements
+### Prerequisites
 
-### 3.1 Data Input/Output
-- **Pattern Loading**:
-  - Load starting patterns from text files (RLE format recommended)
-  - Built-in pattern library (minimum 5 classic patterns: Glider, Blinker, Pulsar, Glider Gun, R-pentomino)
-  - Grid size specification (suggest default 50x50, max 200x200)
-- **Save/Load Sessions**:
-  - Export all computed generations to text file
-  - Import previously saved generation data
-  - File format: JSON with metadata (grid size, generation count, cell states)
+- Node.js (with npm)
+- A modern web browser with WebGL support (Chrome, Firefox, or Edge from 2022 or newer)
 
-### 3.2 User Controls
-- **Generation Controls**:
-  - Select number of generations to compute (1-1000)
-  - Select display range within computed generations (e.g., show only gen 20-40)
-  - Play/Pause animation through generations
-  - Step forward/backward one generation
-- **Camera Controls**:
-  - WASD/Arrow keys: Pan camera
-  - Q/E: Rotate around Y-axis
-  - R/F: Move up/down
-  - Mouse drag: Orbit camera
-  - Mouse wheel: Zoom in/out
-  - Reset camera button
-- **Visual Controls**:
-  - Cell padding slider (0-100%, 1% increments)
-  - Cell color picker
-  - Grid lines on/off toggle
-  - Generation labels on/off
+### Installation
 
-## 4. User Interface Requirements
+```bash
+# Clone the repository
+git clone https://github.com/hybridmachine/ClaudeAssistedProjects.git
+cd ClaudeAssistedProjects/GameOfLife3D
 
-### 4.1 Layout
-- **Control Panel**: Collapsible sidebar with all controls
-- **3D Viewport**: Main area for WebGL rendering
-- **Status Bar**: Current generation range, FPS, cell count
+# Install dependencies
+npm install
+```
 
-### 4.2 Controls Organization
-- **File Operations**: Load pattern, Save/Load session
-- **Simulation**: Generation count, Display range, Play controls
-- **Visual**: Padding, Colors, Display options
-- **Camera**: Reset button, control hints
+### Running the Application
 
-## 5. Performance Requirements
-- Handle grids up to 200x200 cells
-- Render up to 100 generations simultaneously
-- Maintain 30+ FPS during camera movement
-- Progressive loading for large generation counts
+```bash
+# Build and start the development server (opens browser automatically)
+npm run dev
+```
 
-## 6. Additional Considerations
+The application will open at `http://localhost:8080`.
 
-### 6.1 Error Handling
-- Invalid file format detection with user-friendly messages
-- Grid size validation
-- Memory usage warnings for large configurations
+### Other Commands
 
-### 6.2 Future Enhancements (Not in MVP)
-- Multiple rule sets beyond standard Game of Life
-- Cell state history visualization (fade older generations)
-- Export to 3D model file (STL/OBJ)
-- VR support
+```bash
+# Build TypeScript to JavaScript
+npm run build
 
-## 7. Implementation Notes
-- Consider using Three.js for WebGL abstraction
-- Use InstancedMesh for performance with many cubes
-- Implement frustum culling for cells outside camera view
-- Use Web Workers for generation computation if needed
+# Watch mode (auto-recompile on changes)
+npm run watch
+
+# Start server only (assumes already built)
+npm run serve
+
+# Clean build artifacts
+npm run clean
+```
+
+## Usage
+
+1. **Select a Pattern**: Choose from built-in patterns or load a custom RLE file
+2. **Set Generations**: Enter the number of generations to compute (1-1000)
+3. **Compute**: Click "Compute Generations" to generate the 3D structure
+4. **Explore**: Navigate through the 3D visualization using camera controls
+5. **Customize**: Adjust visual settings like cell color, padding, and grid lines
+6. **Save**: Export your session or patterns for later use
+
+## Controls
+
+### Keyboard
+
+| Key | Action |
+|-----|--------|
+| W / Up Arrow | Pan forward |
+| S / Down Arrow | Pan backward |
+| A / Left Arrow | Pan left |
+| D / Right Arrow | Pan right |
+| Q | Rotate left around Y-axis |
+| E | Rotate right around Y-axis |
+| R | Move camera up |
+| F | Move camera down |
+| O | Orbit around Z-axis (counterclockwise) |
+| P | Orbit around Z-axis (clockwise) |
+
+### Mouse
+
+| Action | Effect |
+|--------|--------|
+| Left-click drag | Orbit camera |
+| Right-click drag | Pan camera |
+| Scroll wheel | Zoom in/out |
+
+### Touch (Mobile/Tablet)
+
+| Gesture | Effect |
+|---------|--------|
+| Single finger drag | Orbit camera |
+| Two finger drag | Pan camera |
+| Pinch | Zoom in/out |
+
+## Project Structure
+
+```
+GameOfLife3D/
+├── src/
+│   ├── main.ts              # Application entry point
+│   ├── GameEngine.ts        # Game of Life computation engine
+│   ├── Renderer3D.ts        # Three.js rendering system
+│   ├── CameraController.ts  # Camera controls (keyboard/mouse/touch)
+│   ├── UIControls.ts        # UI event handling
+│   └── PatternLoader.ts     # RLE format parsing and patterns
+├── dist/                    # Compiled JavaScript (generated)
+├── index.html               # Main HTML file
+├── styles.css               # Application styles
+├── package.json             # Dependencies and scripts
+└── tsconfig.json            # TypeScript configuration
+```
+
+## Built-in Patterns
+
+| Pattern | Description |
+|---------|-------------|
+| **Glider** | Simple spaceship that travels diagonally across the grid |
+| **Blinker** | Period-2 oscillator (simplest oscillator) |
+| **Pulsar** | Period-3 oscillator with beautiful symmetry (13x13) |
+| **Glider Gun** | Gosper's Glider Gun - produces infinite stream of gliders |
+| **R-pentomino** | Methuselah pattern that evolves for 1103+ generations |
+
+## File Formats
+
+### RLE Pattern Format
+
+The application supports the standard Run-Length Encoded (RLE) format for Game of Life patterns:
+
+```
+#N Pattern Name
+#C Comment line
+x = 3, y = 3, rule = B3/S23
+bo$2bo$3o!
+```
+
+### Session Format (JSON)
+
+Sessions are saved as JSON files containing:
+- Grid dimensions
+- All computed generations
+- Cell states for each generation
+
+## Technologies
+
+- **TypeScript** - Type-safe JavaScript
+- **Three.js** - WebGL-based 3D graphics
+- **HTML5/CSS3** - User interface
+- **http-server** - Development server
+
+## Performance Notes
+
+- Recommended maximum grid size: 200x200
+- Recommended maximum simultaneous generations: 100
+- Uses InstancedMesh for efficient rendering of thousands of cubes
+- Supports frustum culling for off-screen cells
+
+## Browser Support
+
+- Chrome (2022+)
+- Firefox (2022+)
+- Edge (2022+)
+
+Requires WebGL support.
+
+## License
+
+This project is part of the ClaudeAssistedProjects repository.
+
+## Contributing
+
+Contributions are welcome! Please read the `AGENTS.md` file for coding guidelines and development practices.
