@@ -251,12 +251,12 @@ export class UIControls {
     private onGridSizeChange(size: number): void {
         this.gameEngine.setGridSize(size);
         this.renderer.setGridSize(size);
-        this.updateDisplayRange();
+        this.syncDisplayRange();
         this.updateUI();
     }
 
     private onGenerationCountChange(count: number): void {
-        this.updateDisplayRange();
+        this.syncDisplayRange();
         this.updateUI();
     }
 
@@ -279,7 +279,7 @@ export class UIControls {
             }
 
             this.gameEngine.computeGenerations(count);
-            this.updateDisplayRange();
+            this.syncDisplayRange();
             this.renderCurrentView();
             this.updateUI();
         } catch (error) {
@@ -310,25 +310,52 @@ export class UIControls {
     }
 
     private stepGeneration(direction: number): void {
-        const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
-        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '50');
+        const startInput = this.elements['display-start'] as HTMLInputElement | undefined;
+        const endInput = this.elements['display-end'] as HTMLInputElement | undefined;
+
+        if (!startInput || !endInput) {
+            console.warn('Display range inputs not found');
+            return;
+        }
+
+        const start = parseInt(startInput.value || '0');
+        const end = parseInt(endInput.value || '50');
         const maxGen = this.gameEngine.getGenerationCount() - 1;
 
-        let newStart = Math.max(0, start + direction);
-        let newEnd = Math.max(1, end + direction);
+        // Ensure we have valid generations to step through
+        if (maxGen < 0) {
+            return;
+        }
 
-        if (newEnd > maxGen) {
+        const windowSize = end - start;
+
+        // Calculate new positions
+        let newStart = start + direction;
+        let newEnd = end + direction;
+
+        // Boundary checks - stop at edges rather than clamping back
+        if (direction > 0 && newEnd > maxGen) {
+            // Stepping forward: stop if already at the end
+            if (end >= maxGen) {
+                return; // Already at the end, can't step forward
+            }
+            // Clamp to the end while preserving window size if possible
             newEnd = maxGen;
-            newStart = Math.max(0, newEnd - (end - start));
+            newStart = Math.max(0, newEnd - windowSize);
         }
 
-        if (newStart < 0) {
+        if (direction < 0 && newStart < 0) {
+            // Stepping backward: stop if already at the start
+            if (start <= 0) {
+                return; // Already at the start, can't step backward
+            }
+            // Clamp to the start while preserving window size if possible
             newStart = 0;
-            newEnd = Math.min(maxGen, newStart + (end - start));
+            newEnd = Math.min(maxGen, newStart + windowSize);
         }
 
-        (this.elements['display-start'] as HTMLInputElement).value = newStart.toString();
-        (this.elements['display-end'] as HTMLInputElement).value = newEnd.toString();
+        startInput.value = newStart.toString();
+        endInput.value = newEnd.toString();
 
         this.renderCurrentView();
         this.updateUI();
@@ -381,7 +408,7 @@ export class UIControls {
             try {
                 const pattern = this.patternLoader.parseRLE(content);
                 this.gameEngine.initializeFromPattern(pattern);
-                this.updateDisplayRange();
+                this.syncDisplayRange();
                 this.renderCurrentView();
                 this.updateUI();
             } catch (error) {
@@ -421,7 +448,7 @@ export class UIControls {
                 (this.elements['grid-size'] as HTMLSelectElement).value = state.gridSize.toString();
                 this.renderer.setGridSize(state.gridSize);
 
-                this.updateDisplayRange();
+                this.syncDisplayRange();
                 this.renderCurrentView();
                 this.updateUI();
             } catch (error) {
@@ -437,7 +464,7 @@ export class UIControls {
         const pattern = this.patternLoader.getBuiltInPattern(patternName);
         if (pattern) {
             this.gameEngine.initializeFromPattern(pattern);
-            this.updateDisplayRange();
+            this.syncDisplayRange();
             this.renderCurrentView();
             this.updateUI();
         }
@@ -447,13 +474,20 @@ export class UIControls {
         this.cameraController.reset();
     }
 
-    private updateDisplayRange(): void {
+    syncDisplayRange(): void {
+        const startInput = this.elements['display-start'] as HTMLInputElement | undefined;
+        const endInput = this.elements['display-end'] as HTMLInputElement | undefined;
+
+        if (!startInput || !endInput) {
+            return;
+        }
+
         const maxGen = Math.max(0, this.gameEngine.getGenerationCount() - 1);
         const generationCount = parseInt((this.elements['generation-count'] as HTMLInputElement)?.value || '50');
 
-        (this.elements['display-start'] as HTMLInputElement).max = maxGen.toString();
-        (this.elements['display-end'] as HTMLInputElement).max = maxGen.toString();
-        (this.elements['display-end'] as HTMLInputElement).value = Math.min(generationCount - 1, maxGen).toString();
+        startInput.max = maxGen.toString();
+        endInput.max = maxGen.toString();
+        endInput.value = Math.min(generationCount - 1, maxGen).toString();
     }
 
     private renderCurrentView(): void {
