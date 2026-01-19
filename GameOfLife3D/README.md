@@ -3,7 +3,7 @@
 A browser-based 3D visualization of Conway's Game of Life. Watch cellular automata evolve through time as a stunning three-dimensional structure, with each generation stacked vertically in 3D space.
 
 ![GameOfLife3D Screenshot](images/screenshot.png)
-*Gosper's Glider Gun pattern with edge color cycling enabled, showing 49 generations*
+*R-Petomino pattern with edge color cycling enabled, showing 49 generations*
 
 ## Features
 
