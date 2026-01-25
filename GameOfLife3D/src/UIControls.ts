@@ -51,7 +51,7 @@ export class UIControls {
         const elementIds = [
             'toggle-controls', 'controls',
             'grid-size', 'display-start', 'display-end',
-            'play-btn', 'pause-btn', 'step-back', 'step-forward',
+            'play-pause-btn', 'step-back', 'step-forward',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
             'edge-color-cycling', 'edge-color-angle', 'angle-value',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
@@ -107,12 +107,8 @@ export class UIControls {
             });
         }
 
-        if (this.elements['play-btn']) {
-            this.elements['play-btn'].addEventListener('click', () => this.startAnimation());
-        }
-
-        if (this.elements['pause-btn']) {
-            this.elements['pause-btn'].addEventListener('click', () => this.stopAnimation());
+        if (this.elements['play-pause-btn']) {
+            this.elements['play-pause-btn'].addEventListener('click', () => this.togglePlayPause());
         }
 
         if (this.elements['step-back']) {
@@ -253,13 +249,30 @@ export class UIControls {
         }
     }
 
+    private togglePlayPause(): void {
+        if (this.isPlaying) {
+            this.stopAnimation();
+        } else {
+            this.startAnimation();
+        }
+    }
+
     private startAnimation(): void {
         this.isPlaying = true;
+        this.updatePlayPauseButton();
         this.animate();
     }
 
     private stopAnimation(): void {
         this.isPlaying = false;
+        this.updatePlayPauseButton();
+    }
+
+    private updatePlayPauseButton(): void {
+        const btn = this.elements['play-pause-btn'] as HTMLButtonElement | undefined;
+        if (btn) {
+            btn.textContent = this.isPlaying ? 'Pause' : 'Play';
+        }
     }
 
     private animate(): void {
