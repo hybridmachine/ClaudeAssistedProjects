@@ -16,12 +16,18 @@ export interface GameState {
     currentGeneration: number;
 }
 
+const MAX_GENERATIONS = 1000;
+
 export class GameEngine {
     private gridSize: number;
     private generations: Generation[] = [];
 
     constructor(gridSize: number = 50) {
         this.gridSize = gridSize;
+    }
+
+    getMaxGenerations(): number {
+        return MAX_GENERATIONS;
     }
 
     setGridSize(size: number): void {
@@ -70,13 +76,32 @@ export class GameEngine {
             throw new Error('No initial generation set. Call initializeFromPattern or initializeRandom first.');
         }
 
-        const targetCount = Math.min(count, 1000);
+        const targetCount = Math.min(count, MAX_GENERATIONS);
 
         for (let i = this.generations.length; i < targetCount; i++) {
             const currentGrid = this.generations[i - 1].cells;
             const nextGrid = this.computeNextGeneration(currentGrid);
             this.addGeneration(nextGrid);
         }
+    }
+
+    /**
+     * Computes a single next generation and adds it to the generations array.
+     * @returns true if a new generation was computed, false if at max limit or no initial generation
+     */
+    computeSingleGeneration(): boolean {
+        if (this.generations.length === 0) {
+            return false;
+        }
+
+        if (this.generations.length >= MAX_GENERATIONS) {
+            return false;
+        }
+
+        const currentGrid = this.generations[this.generations.length - 1].cells;
+        const nextGrid = this.computeNextGeneration(currentGrid);
+        this.addGeneration(nextGrid);
+        return true;
     }
 
     private createEmptyGrid(): boolean[][] {
