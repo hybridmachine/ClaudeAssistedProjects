@@ -77,7 +77,7 @@ class GameOfLife3D {
         const initialPattern = this.patternLoader.getBuiltInPattern('r-pentomino');
         if (initialPattern) {
             this.gameEngine.initializeFromPattern(initialPattern);
-            this.gameEngine.computeGenerations(50);
+            // Only show generation 0 initially - user clicks Play to animate
             this.uiControls.syncDisplayRange();
             this.updateView();
         }
@@ -85,8 +85,8 @@ class GameOfLife3D {
 
     private updateView(): void {
         const generations = this.gameEngine.getGenerations();
-        const maxGen = Math.min(49, generations.length - 1);
-        this.renderer.renderGenerations(generations, 0, maxGen);
+        // Show only generation 0 initially
+        this.renderer.renderGenerations(generations, 0, 0);
     }
 
     private startRenderLoop(): void {

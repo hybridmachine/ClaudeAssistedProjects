@@ -5,7 +5,6 @@ import { PatternLoader } from './PatternLoader.js';
 
 export interface UIState {
     gridSize: number;
-    generationCount: number;
     displayStart: number;
     displayEnd: number;
     cellPadding: number;
@@ -51,8 +50,8 @@ export class UIControls {
     private initializeElements(): void {
         const elementIds = [
             'toggle-controls', 'controls',
-            'grid-size', 'generation-count', 'display-start', 'display-end',
-            'compute-btn', 'play-btn', 'pause-btn', 'step-back', 'step-forward',
+            'grid-size', 'display-start', 'display-end',
+            'play-btn', 'pause-btn', 'step-back', 'step-forward',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
             'edge-color-cycling', 'edge-color-angle', 'angle-value',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
@@ -94,13 +93,6 @@ export class UIControls {
             });
         }
 
-        if (this.elements['generation-count']) {
-            this.elements['generation-count'].addEventListener('input', (e) => {
-                const target = e.target as HTMLInputElement;
-                this.onGenerationCountChange(parseInt(target.value));
-            });
-        }
-
         if (this.elements['display-start']) {
             this.elements['display-start'].addEventListener('input', (e) => {
                 const target = e.target as HTMLInputElement;
@@ -113,10 +105,6 @@ export class UIControls {
                 const target = e.target as HTMLInputElement;
                 this.onDisplayRangeChange();
             });
-        }
-
-        if (this.elements['compute-btn']) {
-            this.elements['compute-btn'].addEventListener('click', () => this.computeGenerations());
         }
 
         if (this.elements['play-btn']) {
@@ -255,36 +243,13 @@ export class UIControls {
         this.updateUI();
     }
 
-    private onGenerationCountChange(count: number): void {
-        this.syncDisplayRange();
-        this.updateUI();
-    }
-
     private onDisplayRangeChange(): void {
         const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
-        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '50');
+        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0');
 
         if (start <= end) {
             this.renderCurrentView();
             this.updateUI();
-        }
-    }
-
-    private computeGenerations(): void {
-        const count = parseInt((this.elements['generation-count'] as HTMLInputElement)?.value || '50');
-
-        try {
-            if (this.gameEngine.getGenerationCount() === 0) {
-                this.gameEngine.initializeRandom(0.3);
-            }
-
-            this.gameEngine.computeGenerations(count);
-            this.syncDisplayRange();
-            this.renderCurrentView();
-            this.updateUI();
-        } catch (error) {
-            console.error('Error computing generations:', error);
-            alert('Please load a pattern first or ensure grid is properly initialized.');
         }
     }
 
@@ -302,7 +267,32 @@ export class UIControls {
 
         const now = Date.now();
         if (now - this.lastAnimationTime > this.animationSpeed) {
-            this.stepGeneration(1);
+            // Compute the next generation
+            const computed = this.gameEngine.computeSingleGeneration();
+
+            if (computed) {
+                // Update display range to show the growing timeline
+                const endInput = this.elements['display-end'] as HTMLInputElement | undefined;
+                if (endInput) {
+                    const maxGen = this.gameEngine.getGenerationCount() - 1;
+                    endInput.value = maxGen.toString();
+                    endInput.max = maxGen.toString();
+                }
+
+                // Update start input max as well
+                const startInput = this.elements['display-start'] as HTMLInputElement | undefined;
+                if (startInput) {
+                    const maxGen = this.gameEngine.getGenerationCount() - 1;
+                    startInput.max = maxGen.toString();
+                }
+
+                this.renderCurrentView();
+                this.updateUI();
+            } else {
+                // Reached max generations, stop playing
+                this.stopAnimation();
+            }
+
             this.lastAnimationTime = now;
         }
 
@@ -319,8 +309,8 @@ export class UIControls {
         }
 
         const start = parseInt(startInput.value || '0');
-        const end = parseInt(endInput.value || '50');
-        const maxGen = this.gameEngine.getGenerationCount() - 1;
+        const end = parseInt(endInput.value || '0');
+        let maxGen = this.gameEngine.getGenerationCount() - 1;
 
         // Ensure we have valid generations to step through
         if (maxGen < 0) {
@@ -333,13 +323,22 @@ export class UIControls {
         let newStart = start + direction;
         let newEnd = end + direction;
 
-        // Boundary checks - stop at edges rather than clamping back
+        // If stepping forward and at the edge, compute a new generation
         if (direction > 0 && newEnd > maxGen) {
-            // Stepping forward: stop if already at the end
-            if (end >= maxGen) {
-                return; // Already at the end, can't step forward
+            const computed = this.gameEngine.computeSingleGeneration();
+            if (computed) {
+                maxGen = this.gameEngine.getGenerationCount() - 1;
+                // Update input max values
+                startInput.max = maxGen.toString();
+                endInput.max = maxGen.toString();
+            } else {
+                // At max, can't step forward
+                return;
             }
-            // Clamp to the end while preserving window size if possible
+        }
+
+        // Boundary checks
+        if (direction > 0 && newEnd > maxGen) {
             newEnd = maxGen;
             newStart = Math.max(0, newEnd - windowSize);
         }
@@ -483,11 +482,11 @@ export class UIControls {
         }
 
         const maxGen = Math.max(0, this.gameEngine.getGenerationCount() - 1);
-        const generationCount = parseInt((this.elements['generation-count'] as HTMLInputElement)?.value || '50');
 
         startInput.max = maxGen.toString();
+        startInput.value = '0';
         endInput.max = maxGen.toString();
-        endInput.value = Math.min(generationCount - 1, maxGen).toString();
+        endInput.value = maxGen.toString();
     }
 
     private renderCurrentView(): void {
@@ -537,9 +536,8 @@ export class UIControls {
     getState(): UIState {
         return {
             gridSize: parseInt((this.elements['grid-size'] as HTMLSelectElement)?.value || '50'),
-            generationCount: parseInt((this.elements['generation-count'] as HTMLInputElement)?.value || '50'),
             displayStart: parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0'),
-            displayEnd: parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '50'),
+            displayEnd: parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0'),
             cellPadding: parseInt((this.elements['cell-padding'] as HTMLInputElement)?.value || '20'),
             cellColor: (this.elements['cell-color'] as HTMLInputElement)?.value || '#00ff88',
             showGridLines: (this.elements['grid-lines'] as HTMLInputElement)?.checked || true,
