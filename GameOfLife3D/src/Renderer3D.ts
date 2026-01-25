@@ -24,9 +24,17 @@ export class Renderer3D {
     private gridLines: THREE.LineSegments | null = null;
     private starField: THREE.Points | null = null;
     private generationLabels: THREE.Sprite[] = [];
-    private starTwinkleIndices: number[] = [];
-    private starBaseBrightness: Float32Array | null = null;
     private galaxies: THREE.Mesh[] = [];
+
+    // Label caching
+    private lastLabelStart: number = -1;
+    private lastLabelEnd: number = -1;
+    private lastLabelStep: number = -1;
+
+    // Render state tracking
+    private lastDisplayStart: number = -1;
+    private lastDisplayEnd: number = -1;
+    private lastGenerationCount: number = -1;
 
     private gridSize: number = 50;
     private cellPadding: number = 0.2;
@@ -96,7 +104,7 @@ export class Renderer3D {
         const starCount = 5000;
         const positions = new Float32Array(starCount * 3);
         const brightness = new Float32Array(starCount);
-        this.starBaseBrightness = new Float32Array(starCount);
+        const twinkleSeed = new Float32Array(starCount);
 
         // Select 2% of stars to twinkle
         const twinkleCount = Math.floor(starCount * 0.02);
@@ -104,7 +112,6 @@ export class Renderer3D {
         while (twinkleSet.size < twinkleCount) {
             twinkleSet.add(Math.floor(Math.random() * starCount));
         }
-        this.starTwinkleIndices = Array.from(twinkleSet);
 
         for (let i = 0; i < starCount; i++) {
             const i3 = i * 3;
@@ -120,25 +127,33 @@ export class Renderer3D {
             positions[i3 + 2] = radius * Math.cos(phi);
 
             // Vary base brightness between 0.3 and 1.0
-            const baseBrightness = 0.3 + Math.random() * 0.7;
-            this.starBaseBrightness[i] = baseBrightness;
-            brightness[i] = baseBrightness;
+            brightness[i] = 0.3 + Math.random() * 0.7;
+            // twinkleSeed: 0 for non-twinkling, random 0-1 for twinkling stars
+            twinkleSeed[i] = twinkleSet.has(i) ? Math.random() : 0.0;
         }
 
         const starGeometry = new THREE.BufferGeometry();
         starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         starGeometry.setAttribute('brightness', new THREE.BufferAttribute(brightness, 1));
+        starGeometry.setAttribute('twinkleSeed', new THREE.BufferAttribute(twinkleSeed, 1));
 
         const starMaterial = new THREE.ShaderMaterial({
             uniforms: {
-                pointSize: { value: 2.0 }
+                pointSize: { value: 2.0 },
+                time: { value: 0.0 }
             },
             vertexShader: `
                 attribute float brightness;
+                attribute float twinkleSeed;
                 uniform float pointSize;
+                uniform float time;
                 varying float vBrightness;
                 void main() {
-                    vBrightness = brightness;
+                    // Compute twinkle in shader: 70-100% of base brightness for twinkling stars
+                    float twinkle = twinkleSeed > 0.0
+                        ? 0.7 + 0.3 * sin(time * 2.0 + twinkleSeed * 6.28)
+                        : 1.0;
+                    vBrightness = brightness * twinkle;
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                     gl_PointSize = pointSize;
                     gl_Position = projectionMatrix * mvPosition;
@@ -538,6 +553,11 @@ export class Renderer3D {
         this.wireframeMesh = new THREE.InstancedMesh(geometry, wireframeMaterial, this.maxInstances);
         this.wireframeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.scene.add(this.wireframeMesh);
+
+        // Invalidate render state to force update on next renderGenerations call
+        this.lastDisplayStart = -1;
+        this.lastDisplayEnd = -1;
+        this.lastGenerationCount = -1;
     }
 
     private updateCellColor(): void {
@@ -595,6 +615,10 @@ export class Renderer3D {
             label.material.dispose();
         });
         this.generationLabels = [];
+        // Invalidate label cache
+        this.lastLabelStart = -1;
+        this.lastLabelEnd = -1;
+        this.lastLabelStep = -1;
     }
 
     renderGenerations(generations: Generation[], displayStart: number, displayEnd: number): void {
@@ -613,35 +637,47 @@ export class Renderer3D {
             this.wireframeMesh.material.uniforms.maxZ.value = displayEnd;
         }
 
-        const matrix = new THREE.Matrix4();
-        let instanceIndex = 0;
+        // Check if instance data needs to be updated
+        const stateChanged = displayStart !== this.lastDisplayStart ||
+                            displayEnd !== this.lastDisplayEnd ||
+                            generations.length !== this.lastGenerationCount;
 
-        const halfSize = this.gridSize / 2;
+        if (stateChanged) {
+            const matrix = new THREE.Matrix4();
+            let instanceIndex = 0;
 
-        for (let genIndex = displayStart; genIndex <= displayEnd && genIndex < generations.length; genIndex++) {
-            const generation = generations[genIndex];
-            if (!generation) continue;
+            const halfSize = this.gridSize / 2;
 
-            for (const cell of generation.liveCells) {
-                if (instanceIndex >= this.maxInstances) break;
+            for (let genIndex = displayStart; genIndex <= displayEnd && genIndex < generations.length; genIndex++) {
+                const generation = generations[genIndex];
+                if (!generation) continue;
 
-                const x = cell.x - halfSize;
-                const y = genIndex;
-                const z = cell.y - halfSize;
+                for (const cell of generation.liveCells) {
+                    if (instanceIndex >= this.maxInstances) break;
 
-                matrix.setPosition(x, y, z);
-                this.instancedMesh!.setMatrixAt(instanceIndex, matrix);
-                this.wireframeMesh!.setMatrixAt(instanceIndex, matrix);
-                instanceIndex++;
+                    const x = cell.x - halfSize;
+                    const y = genIndex;
+                    const z = cell.y - halfSize;
+
+                    matrix.setPosition(x, y, z);
+                    this.instancedMesh!.setMatrixAt(instanceIndex, matrix);
+                    this.wireframeMesh!.setMatrixAt(instanceIndex, matrix);
+                    instanceIndex++;
+                }
             }
+
+            this.currentInstanceCount = instanceIndex;
+            this.instancedMesh!.count = this.currentInstanceCount;
+            this.instancedMesh!.instanceMatrix.needsUpdate = true;
+
+            this.wireframeMesh!.count = this.currentInstanceCount;
+            this.wireframeMesh!.instanceMatrix.needsUpdate = true;
+
+            // Update tracking state
+            this.lastDisplayStart = displayStart;
+            this.lastDisplayEnd = displayEnd;
+            this.lastGenerationCount = generations.length;
         }
-
-        this.currentInstanceCount = instanceIndex;
-        this.instancedMesh!.count = this.currentInstanceCount;
-        this.instancedMesh!.instanceMatrix.needsUpdate = true;
-
-        this.wireframeMesh!.count = this.currentInstanceCount;
-        this.wireframeMesh!.instanceMatrix.needsUpdate = true;
 
         if (this.showGenerationLabels) {
             this.createGenerationLabels(displayStart, displayEnd);
@@ -649,9 +685,19 @@ export class Renderer3D {
     }
 
     private createGenerationLabels(start: number, end: number): void {
-        this.updateGenerationLabels();
-
         const step = Math.max(1, Math.floor((end - start) / 10));
+
+        // Check if labels need to be recreated
+        if (start === this.lastLabelStart &&
+            end === this.lastLabelEnd &&
+            step === this.lastLabelStep) {
+            return; // Range unchanged, skip recreation
+        }
+
+        this.updateGenerationLabels();
+        this.lastLabelStart = start;
+        this.lastLabelEnd = end;
+        this.lastLabelStep = step;
 
         for (let i = start; i <= end; i += step) {
             const canvas = document.createElement('canvas');
@@ -715,25 +761,9 @@ export class Renderer3D {
             this.wireframeMesh.material.uniforms.time.value = normalizedTime * range;
         }
 
-        // Update star twinkle animation
-        if (this.starField && this.starBaseBrightness) {
-            const geometry = this.starField.geometry;
-            const brightnessAttribute = geometry.getAttribute('brightness') as THREE.BufferAttribute;
-
-            if (brightnessAttribute) {
-                const twinkleCycle = 3.0; // 3 second twinkle cycle
-                const twinklePhase = (elapsed % twinkleCycle) / twinkleCycle; // 0 to 1
-
-                // Update brightness for twinkling stars
-                for (const starIndex of this.starTwinkleIndices) {
-                    const baseBrightness = this.starBaseBrightness[starIndex];
-                    // Slow sine wave twinkle between 70% and 100% of base brightness
-                    const twinkle = 0.7 + 0.3 * Math.sin(twinklePhase * Math.PI * 2);
-                    brightnessAttribute.setX(starIndex, baseBrightness * twinkle);
-                }
-
-                brightnessAttribute.needsUpdate = true;
-            }
+        // Update star shader time uniform for GPU-based twinkle animation
+        if (this.starField && this.starField.material instanceof THREE.ShaderMaterial) {
+            this.starField.material.uniforms.time.value = elapsed;
         }
 
         this.renderer.render(this.scene, this.camera);
