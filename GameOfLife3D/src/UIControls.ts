@@ -54,7 +54,7 @@ export class UIControls {
             'grid-size', 'display-start', 'display-end',
             'play-pause-btn', 'step-back', 'step-forward',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
-            'face-color-cycling', 'edge-color-cycling', 'edge-color-angle', 'angle-value',
+            'face-color-cycling', 'edge-color-cycling', 'edge-color', 'edge-color-angle', 'angle-value',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
             'reset-camera',
             'status-generation', 'status-fps', 'status-cells'
@@ -165,6 +165,13 @@ export class UIControls {
             this.elements['edge-color-cycling'].addEventListener('change', (e) => {
                 const target = e.target as HTMLInputElement;
                 this.onEdgeColorCyclingChange(target.checked);
+            });
+        }
+
+        if (this.elements['edge-color']) {
+            this.elements['edge-color'].addEventListener('change', (e) => {
+                const target = e.target as HTMLInputElement;
+                this.onEdgeColorChange(target.value);
             });
         }
 
@@ -412,6 +419,24 @@ export class UIControls {
 
     private onEdgeColorCyclingChange(enabled: boolean): void {
         this.renderer.setRenderSettings({ edgeColorCycling: enabled });
+
+        // Enable edge color picker when cycling is OFF, disable when ON
+        const edgeColorPicker = this.elements['edge-color'] as HTMLInputElement | undefined;
+        if (edgeColorPicker) {
+            edgeColorPicker.disabled = enabled;
+        }
+
+        // Disable angle slider when cycling is OFF (angle only applies to cycling)
+        const angleSlider = this.elements['edge-color-angle'] as HTMLInputElement | undefined;
+        if (angleSlider) {
+            angleSlider.disabled = !enabled;
+        }
+
+        this.renderCurrentView();
+    }
+
+    private onEdgeColorChange(color: string): void {
+        this.renderer.setRenderSettings({ edgeColor: color });
         this.renderCurrentView();
     }
 
