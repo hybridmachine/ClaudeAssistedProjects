@@ -123,10 +123,6 @@ body {
     margin-top: 10px;
 }
 
-.play-controls button:first-child {
-    grid-column: 1 / -1;
-}
-
 .pattern-btn {
     margin-bottom: 5px !important;
     padding: 6px !important;
