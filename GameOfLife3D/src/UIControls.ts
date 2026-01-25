@@ -53,7 +53,7 @@ export class UIControls {
             'grid-size', 'display-start', 'display-end',
             'play-pause-btn', 'step-back', 'step-forward',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
-            'edge-color-cycling', 'edge-color-angle', 'angle-value',
+            'face-color-cycling', 'edge-color-cycling', 'edge-color-angle', 'angle-value',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
             'reset-camera',
             'status-generation', 'status-fps', 'status-cells'
@@ -131,6 +131,19 @@ export class UIControls {
                 const target = e.target as HTMLInputElement;
                 this.onCellColorChange(target.value);
             });
+        }
+
+        if (this.elements['face-color-cycling']) {
+            this.elements['face-color-cycling'].addEventListener('change', (e) => {
+                const target = e.target as HTMLInputElement;
+                this.onFaceColorCyclingChange(target.checked);
+            });
+        }
+
+        // Disable color picker by default since face color cycling starts enabled
+        const colorPicker = this.elements['cell-color'] as HTMLInputElement | undefined;
+        if (colorPicker) {
+            colorPicker.disabled = true;
         }
 
         if (this.elements['grid-lines']) {
@@ -406,6 +419,18 @@ export class UIControls {
             this.elements['angle-value'].textContent = `${angle}°`;
         }
         this.renderer.setRenderSettings({ edgeColorAngle: angle });
+        this.renderCurrentView();
+    }
+
+    private onFaceColorCyclingChange(enabled: boolean): void {
+        this.renderer.setRenderSettings({ faceColorCycling: enabled });
+
+        // Disable color picker when cycling is ON, enable when OFF
+        const colorPicker = this.elements['cell-color'] as HTMLInputElement | undefined;
+        if (colorPicker) {
+            colorPicker.disabled = enabled;
+        }
+
         this.renderCurrentView();
     }
 

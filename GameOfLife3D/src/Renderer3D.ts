@@ -12,6 +12,7 @@ export interface RenderSettings {
     showGenerationLabels: boolean;
     edgeColorCycling?: boolean;
     edgeColorAngle?: number;
+    faceColorCycling?: boolean;
 }
 
 export class Renderer3D {
@@ -38,6 +39,7 @@ export class Renderer3D {
     private showGenerationLabels: boolean = true;
     private edgeColorCycling: boolean = true;
     private edgeColorAngle: number = 180;
+    private faceColorCycling: boolean = true;
 
     private maxInstances: number = 200 * 200 * 100;
     private currentInstanceCount: number = 0;
@@ -295,6 +297,10 @@ export class Renderer3D {
             this.edgeColorAngle = settings.edgeColorAngle;
             this.updateEdgeColorAngle();
         }
+        if (settings.faceColorCycling !== undefined) {
+            this.faceColorCycling = settings.faceColorCycling;
+            this.recreateInstancedMesh();
+        }
     }
 
     private updateEdgeColorAngle(): void {
@@ -316,68 +322,75 @@ export class Renderer3D {
         const cellSize = 1 - this.cellPadding;
         const geometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
 
-        // Create solid mesh with gradient material
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                startColor: { value: new THREE.Color(this.gradientStartColor) },
-                endColor: { value: new THREE.Color(this.gradientEndColor) },
-                minZ: { value: 0.0 },
-                maxZ: { value: 50.0 },
-                time: { value: 0.0 }
-            },
-            vertexShader: `
-                varying vec3 vWorldPosition;
-                void main() {
-                    vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
-                    vWorldPosition = worldPosition.xyz;
-                    gl_Position = projectionMatrix * viewMatrix * worldPosition;
-                }
-            `,
-            fragmentShader: `
-                uniform vec3 startColor;
-                uniform vec3 endColor;
-                uniform float minZ;
-                uniform float maxZ;
-                uniform float time;
-                varying vec3 vWorldPosition;
-
-                #define PI 3.14159265359
-
-                void main() {
-                    float range = maxZ - minZ;
-                    float offset = mod(time, range);
-                    float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
-
-                    // Normalize position to 0-1 range
-                    float t = adjustedY / range;
-
-                    // Define colors: blue, green, yellow, black, purple
-                    vec3 blue = vec3(0.0, 0.0, 1.0);
-                    vec3 green = vec3(0.0, 1.0, 0.0);
-                    vec3 yellow = vec3(1.0, 1.0, 0.0);
-                    vec3 black = vec3(0.0, 0.0, 0.0);
-                    vec3 purple = vec3(0.5, 0.0, 0.5);
-
-                    // Cycle through 5 colors (0-0.2: blue->green, 0.2-0.4: green->yellow, 0.4-0.6: yellow->black, 0.6-0.8: black->purple, 0.8-1: purple->blue)
-                    vec3 color;
-                    float segment = t * 5.0;
-
-                    if (segment < 1.0) {
-                        color = mix(blue, green, segment);
-                    } else if (segment < 2.0) {
-                        color = mix(green, yellow, segment - 1.0);
-                    } else if (segment < 3.0) {
-                        color = mix(yellow, black, segment - 2.0);
-                    } else if (segment < 4.0) {
-                        color = mix(black, purple, segment - 3.0);
-                    } else {
-                        color = mix(purple, blue, segment - 4.0);
+        // Create solid mesh material - either gradient shader or solid Lambert
+        let material: THREE.Material;
+        if (this.faceColorCycling) {
+            material = new THREE.ShaderMaterial({
+                uniforms: {
+                    startColor: { value: new THREE.Color(this.gradientStartColor) },
+                    endColor: { value: new THREE.Color(this.gradientEndColor) },
+                    minZ: { value: 0.0 },
+                    maxZ: { value: 50.0 },
+                    time: { value: 0.0 }
+                },
+                vertexShader: `
+                    varying vec3 vWorldPosition;
+                    void main() {
+                        vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                        vWorldPosition = worldPosition.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * worldPosition;
                     }
+                `,
+                fragmentShader: `
+                    uniform vec3 startColor;
+                    uniform vec3 endColor;
+                    uniform float minZ;
+                    uniform float maxZ;
+                    uniform float time;
+                    varying vec3 vWorldPosition;
 
-                    gl_FragColor = vec4(color, 1.0);
-                }
-            `
-        });
+                    #define PI 3.14159265359
+
+                    void main() {
+                        float range = maxZ - minZ;
+                        float offset = mod(time, range);
+                        float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
+
+                        // Normalize position to 0-1 range
+                        float t = adjustedY / range;
+
+                        // Define colors: blue, green, yellow, black, purple
+                        vec3 blue = vec3(0.0, 0.0, 1.0);
+                        vec3 green = vec3(0.0, 1.0, 0.0);
+                        vec3 yellow = vec3(1.0, 1.0, 0.0);
+                        vec3 black = vec3(0.0, 0.0, 0.0);
+                        vec3 purple = vec3(0.5, 0.0, 0.5);
+
+                        // Cycle through 5 colors (0-0.2: blue->green, 0.2-0.4: green->yellow, 0.4-0.6: yellow->black, 0.6-0.8: black->purple, 0.8-1: purple->blue)
+                        vec3 color;
+                        float segment = t * 5.0;
+
+                        if (segment < 1.0) {
+                            color = mix(blue, green, segment);
+                        } else if (segment < 2.0) {
+                            color = mix(green, yellow, segment - 1.0);
+                        } else if (segment < 3.0) {
+                            color = mix(yellow, black, segment - 2.0);
+                        } else if (segment < 4.0) {
+                            color = mix(black, purple, segment - 3.0);
+                        } else {
+                            color = mix(purple, blue, segment - 4.0);
+                        }
+
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `
+            });
+        } else {
+            material = new THREE.MeshLambertMaterial({
+                color: new THREE.Color(this.cellColor)
+            });
+        }
 
         // Create wireframe mesh - either with color cycling or static white
         let wireframeMaterial: THREE.Material;
@@ -532,6 +545,10 @@ export class Renderer3D {
             this.instancedMesh.material.uniforms.startColor.value.set(this.gradientStartColor);
             this.instancedMesh.material.uniforms.endColor.value.set(this.gradientEndColor);
         }
+        // Update solid face color when not using face color cycling
+        if (!this.faceColorCycling && this.instancedMesh && this.instancedMesh.material instanceof THREE.MeshLambertMaterial) {
+            this.instancedMesh.material.color.set(this.cellColor);
+        }
         // Update wireframe edge color when not using color cycling
         if (!this.edgeColorCycling && this.wireframeMesh && this.wireframeMesh.material instanceof THREE.MeshBasicMaterial) {
             this.wireframeMesh.material.color.set(this.edgeColor);
@@ -685,7 +702,7 @@ export class Renderer3D {
         const cycleTime = 5.0; // 5 seconds per cycle
         const normalizedTime = (elapsed % cycleTime) / cycleTime; // 0 to 1
 
-        if (this.instancedMesh && this.instancedMesh.material instanceof THREE.ShaderMaterial) {
+        if (this.faceColorCycling && this.instancedMesh && this.instancedMesh.material instanceof THREE.ShaderMaterial) {
             const range = this.instancedMesh.material.uniforms.maxZ.value -
                          this.instancedMesh.material.uniforms.minZ.value;
             this.instancedMesh.material.uniforms.time.value = normalizedTime * range;

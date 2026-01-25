@@ -166,6 +166,11 @@ input[type="color"] {
     cursor: pointer;
 }
 
+input[type="color"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 input[type="number"] {
     /* Hide spinner buttons for cleaner direct entry */
     -moz-appearance: textfield;
