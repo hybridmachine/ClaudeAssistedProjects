@@ -30,6 +30,7 @@ export class UIControls {
     private fpsCounter = 0;
     private lastFpsTime = 0;
     private frameCount = 0;
+    private cachedTotalCells = 0;
 
     constructor(
         gameEngine: GameEngine,
@@ -532,11 +533,19 @@ export class UIControls {
         const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '50');
         const generations = this.gameEngine.getGenerations();
 
+        // Compute and cache total cells for visible generations
+        let totalCells = 0;
+        for (let i = start; i <= end && i < generations.length; i++) {
+            if (generations[i]) {
+                totalCells += generations[i].liveCells.length;
+            }
+        }
+        this.cachedTotalCells = totalCells;
+
         this.renderer.renderGenerations(generations, start, end);
     }
 
     private updateUI(): void {
-        const generations = this.gameEngine.getGenerations();
         const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
         const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '50');
 
@@ -544,15 +553,8 @@ export class UIControls {
             this.elements['status-generation'].textContent = `Gen: ${start}-${end}`;
         }
 
-        let totalCells = 0;
-        for (let i = start; i <= end && i < generations.length; i++) {
-            if (generations[i]) {
-                totalCells += generations[i].liveCells.length;
-            }
-        }
-
         if (this.elements['status-cells']) {
-            this.elements['status-cells'].textContent = `Cells: ${totalCells}`;
+            this.elements['status-cells'].textContent = `Cells: ${this.cachedTotalCells}`;
         }
     }
 

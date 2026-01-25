@@ -1,7 +1,6 @@
 export interface CellState {
     x: number;
     y: number;
-    alive: boolean;
 }
 
 export interface Generation {
@@ -116,14 +115,14 @@ export class GameEngine {
         for (let x = 0; x < this.gridSize; x++) {
             for (let y = 0; y < this.gridSize; y++) {
                 if (grid[x][y]) {
-                    liveCells.push({ x, y, alive: true });
+                    liveCells.push({ x, y });
                 }
             }
         }
 
         this.generations.push({
             index: this.generations.length,
-            cells: grid.map(row => [...row]),
+            cells: grid,
             liveCells
         });
     }
