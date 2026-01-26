@@ -13,6 +13,7 @@ export interface GameState {
     gridSize: number;
     generations: Generation[];
     currentGeneration: number;
+    toroidal?: boolean;
 }
 
 const MAX_GENERATIONS = 1000;
@@ -20,9 +21,18 @@ const MAX_GENERATIONS = 1000;
 export class GameEngine {
     private gridSize: number;
     private generations: Generation[] = [];
+    private toroidal: boolean = false;
 
     constructor(gridSize: number = 50) {
         this.gridSize = gridSize;
+    }
+
+    setToroidal(enabled: boolean): void {
+        this.toroidal = enabled;
+    }
+
+    isToroidal(): boolean {
+        return this.toroidal;
     }
 
     getMaxGenerations(): number {
@@ -153,13 +163,23 @@ export class GameEngine {
             for (let dy = -1; dy <= 1; dy++) {
                 if (dx === 0 && dy === 0) continue;
 
-                const nx = x + dx;
-                const ny = y + dy;
+                let nx = x + dx;
+                let ny = y + dy;
 
-                if (nx >= 0 && nx < this.gridSize &&
-                    ny >= 0 && ny < this.gridSize &&
-                    grid[nx][ny]) {
-                    count++;
+                if (this.toroidal) {
+                    // Wrap around edges
+                    nx = (nx + this.gridSize) % this.gridSize;
+                    ny = (ny + this.gridSize) % this.gridSize;
+                    if (grid[nx][ny]) {
+                        count++;
+                    }
+                } else {
+                    // Finite boundaries - out of bounds cells are dead
+                    if (nx >= 0 && nx < this.gridSize &&
+                        ny >= 0 && ny < this.gridSize &&
+                        grid[nx][ny]) {
+                        count++;
+                    }
                 }
             }
         }
@@ -186,13 +206,15 @@ export class GameEngine {
         return {
             gridSize: this.gridSize,
             generations: this.generations,
-            currentGeneration: this.generations.length - 1
+            currentGeneration: this.generations.length - 1,
+            toroidal: this.toroidal
         };
     }
 
     importState(state: GameState): void {
         this.gridSize = state.gridSize;
         this.generations = state.generations;
+        this.toroidal = state.toroidal ?? false;
     }
 
     clear(): void {

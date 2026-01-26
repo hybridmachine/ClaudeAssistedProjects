@@ -51,7 +51,7 @@ export class UIControls {
     private initializeElements(): void {
         const elementIds = [
             'toggle-controls', 'controls',
-            'grid-size', 'display-start', 'display-end',
+            'grid-size', 'toroidal-toggle', 'display-start', 'display-end',
             'play-pause-btn', 'step-back', 'step-forward',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
             'face-color-cycling', 'edge-color-cycling', 'edge-color', 'edge-color-angle', 'angle-value',
@@ -91,6 +91,13 @@ export class UIControls {
             this.elements['grid-size'].addEventListener('change', (e) => {
                 const target = e.target as HTMLSelectElement;
                 this.onGridSizeChange(parseInt(target.value));
+            });
+        }
+
+        if (this.elements['toroidal-toggle']) {
+            this.elements['toroidal-toggle'].addEventListener('change', (e) => {
+                const target = e.target as HTMLInputElement;
+                this.onToroidalChange(target.checked);
             });
         }
 
@@ -258,6 +265,24 @@ export class UIControls {
         this.renderer.setGridSize(size);
         this.syncDisplayRange();
         this.updateUI();
+    }
+
+    private onToroidalChange(enabled: boolean): void {
+        this.gameEngine.setToroidal(enabled);
+        // Toroidal mode affects generation computation, so we need to recompute
+        // from the initial pattern if generations have been computed
+        const generations = this.gameEngine.getGenerations();
+        if (generations.length > 1) {
+            // Keep the initial generation (gen 0) and recompute
+            const gen0Cells = generations[0].cells;
+            const genCount = generations.length;
+            this.gameEngine.clear();
+            this.gameEngine.initializeFromPattern(gen0Cells);
+            this.gameEngine.computeGenerations(genCount);
+            this.syncDisplayRange();
+            this.renderCurrentView();
+            this.updateUI();
+        }
     }
 
     private onDisplayRangeChange(): void {
@@ -510,6 +535,12 @@ export class UIControls {
 
                 (this.elements['grid-size'] as HTMLSelectElement).value = state.gridSize.toString();
                 this.renderer.setGridSize(state.gridSize);
+
+                // Restore toroidal toggle state
+                const toroidalToggle = this.elements['toroidal-toggle'] as HTMLInputElement | undefined;
+                if (toroidalToggle) {
+                    toroidalToggle.checked = state.toroidal ?? false;
+                }
 
                 this.syncDisplayRange();
                 this.renderCurrentView();
