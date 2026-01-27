@@ -53,7 +53,7 @@ export class UIControls {
             'toggle-controls', 'controls',
             'grid-size', 'rule-preset', 'custom-rule-container', 'custom-birth', 'custom-survival', 'apply-custom-rule',
             'toroidal-toggle', 'display-start', 'display-end',
-            'play-pause-btn', 'step-back', 'step-forward',
+            'play-pause-btn', 'step-back', 'step-forward', 'reset-simulation',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
             'face-color-cycling', 'edge-color-cycling', 'edge-color', 'edge-color-angle', 'angle-value',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
@@ -139,6 +139,10 @@ export class UIControls {
 
         if (this.elements['step-forward']) {
             this.elements['step-forward'].addEventListener('click', () => this.stepGeneration(1));
+        }
+
+        if (this.elements['reset-simulation']) {
+            this.elements['reset-simulation'].addEventListener('click', () => this.resetSimulation());
         }
 
         if (this.elements['cell-padding']) {
@@ -660,6 +664,39 @@ export class UIControls {
 
     private resetCamera(): void {
         this.cameraController.reset();
+    }
+
+    private resetSimulation(): void {
+        // Stop any running animation
+        if (this.isPlaying) {
+            this.stopAnimation();
+        }
+
+        // Clear all generations and reset the game engine
+        this.gameEngine.clear();
+
+        // Reset rule to default Conway's Life
+        this.gameEngine.setRule('conway');
+        const rulePreset = this.elements['rule-preset'] as HTMLSelectElement | undefined;
+        if (rulePreset) {
+            rulePreset.value = 'conway';
+        }
+        const customContainer = this.elements['custom-rule-container'];
+        if (customContainer) {
+            customContainer.style.display = 'none';
+        }
+
+        // Reset toroidal to off
+        this.gameEngine.setToroidal(false);
+        const toroidalToggle = this.elements['toroidal-toggle'] as HTMLInputElement | undefined;
+        if (toroidalToggle) {
+            toroidalToggle.checked = false;
+        }
+
+        // Sync display range and update view
+        this.syncDisplayRange();
+        this.renderCurrentView();
+        this.updateUI();
     }
 
     syncDisplayRange(): void {
