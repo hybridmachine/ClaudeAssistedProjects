@@ -693,6 +693,12 @@ export class UIControls {
             toroidalToggle.checked = false;
         }
 
+        // Load default pattern (r-pentomino) to create generation 0
+        const defaultPattern = this.patternLoader.getBuiltInPattern('r-pentomino');
+        if (defaultPattern) {
+            this.gameEngine.initializeFromPattern(defaultPattern);
+        }
+
         // Sync display range and update view
         this.syncDisplayRange();
         this.renderCurrentView();
