@@ -39,6 +39,28 @@
                         <option value="200">200x200</option>
                     </select>
 
+                    <label for="rule-preset">Rule Set:</label>
+                    <select id="rule-preset">
+                        <option value="conway" selected>Conway's Life (B3/S23)</option>
+                        <option value="highlife">HighLife (B36/S23)</option>
+                        <option value="daynight">Day & Night (B3678/S34678)</option>
+                        <option value="seeds">Seeds (B2/S)</option>
+                        <option value="lifewithoutdeath">Life without Death (B3/S012345678)</option>
+                        <option value="diamoeba">Diamoeba (B35678/S5678)</option>
+                        <option value="2x2">2x2 (B36/S125)</option>
+                        <option value="morley">Morley (B368/S245)</option>
+                        <option value="anneal">Anneal (B4678/S35678)</option>
+                        <option value="custom">Custom...</option>
+                    </select>
+
+                    <div id="custom-rule-container" style="display: none;">
+                        <label for="custom-birth">Birth (digits 0-8):</label>
+                        <input type="text" id="custom-birth" placeholder="e.g., 3" pattern="[0-8]*" maxlength="9">
+                        <label for="custom-survival">Survival (digits 0-8):</label>
+                        <input type="text" id="custom-survival" placeholder="e.g., 23" pattern="[0-8]*" maxlength="9">
+                        <button id="apply-custom-rule">Apply Custom Rule</button>
+                    </div>
+
                     <label>
                         <input type="checkbox" id="toroidal-toggle"> Toroidal Wrapping (edges connect)
                     </label>
@@ -53,6 +75,7 @@
                         <button id="play-pause-btn">Play</button>
                         <button id="step-back">◀ Step</button>
                         <button id="step-forward">Step ▶</button>
+                        <button id="reset-simulation">Reset</button>
                     </div>
                 </div>
 
@@ -116,6 +139,7 @@
 
         <div id="status-bar" class="status-bar">
             <span id="status-generation">Gen: 0-0</span>
+            <span id="status-rule">Rule: B3/S23</span>
             <span id="status-fps">FPS: 0</span>
             <span id="status-cells">Cells: 0</span>
         </div>
