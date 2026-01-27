@@ -1,4 +1,4 @@
-# GameOfLife3D
+# [GameOfLife3D](https://www.hybridmachine.com)
 
 A browser-based 3D visualization of Conway's Game of Life. Watch cellular automata evolve through time as a stunning three-dimensional structure, with each generation stacked vertically in 3D space.
 
