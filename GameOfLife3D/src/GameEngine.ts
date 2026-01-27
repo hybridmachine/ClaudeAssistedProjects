@@ -9,11 +9,32 @@ export interface Generation {
     liveCells: CellState[];
 }
 
+export interface Rule {
+    name: string;
+    birth: number[];
+    survival: number[];
+}
+
+export const RULE_PRESETS: Record<string, Rule> = {
+    'conway': { name: "Conway's Life", birth: [3], survival: [2, 3] },
+    'highlife': { name: 'HighLife', birth: [3, 6], survival: [2, 3] },
+    'daynight': { name: 'Day & Night', birth: [3, 6, 7, 8], survival: [3, 4, 6, 7, 8] },
+    'seeds': { name: 'Seeds', birth: [2], survival: [] },
+    'lifewithoutdeath': { name: 'Life without Death', birth: [3], survival: [0, 1, 2, 3, 4, 5, 6, 7, 8] },
+    'diamoeba': { name: 'Diamoeba', birth: [3, 5, 6, 7, 8], survival: [5, 6, 7, 8] },
+    '2x2': { name: '2x2', birth: [3, 6], survival: [1, 2, 5] },
+    'morley': { name: 'Morley', birth: [3, 6, 8], survival: [2, 4, 5] },
+    'anneal': { name: 'Anneal', birth: [4, 6, 7, 8], survival: [3, 5, 6, 7, 8] },
+};
+
 export interface GameState {
     gridSize: number;
     generations: Generation[];
     currentGeneration: number;
     toroidal?: boolean;
+    ruleName?: string;
+    birthRule?: number[];
+    survivalRule?: number[];
 }
 
 const MAX_GENERATIONS = 1000;
@@ -22,6 +43,9 @@ export class GameEngine {
     private gridSize: number;
     private generations: Generation[] = [];
     private toroidal: boolean = false;
+    private birthRule: Set<number> = new Set([3]);
+    private survivalRule: Set<number> = new Set([2, 3]);
+    private currentRuleName: string = 'conway';
 
     constructor(gridSize: number = 50) {
         this.gridSize = gridSize;
@@ -33,6 +57,39 @@ export class GameEngine {
 
     isToroidal(): boolean {
         return this.toroidal;
+    }
+
+    setRule(ruleKey: string): void {
+        const rule = RULE_PRESETS[ruleKey];
+        if (rule) {
+            this.birthRule = new Set(rule.birth);
+            this.survivalRule = new Set(rule.survival);
+            this.currentRuleName = ruleKey;
+        }
+    }
+
+    setCustomRule(birth: number[], survival: number[]): void {
+        this.birthRule = new Set(birth);
+        this.survivalRule = new Set(survival);
+        this.currentRuleName = 'custom';
+    }
+
+    getCurrentRule(): string {
+        return this.currentRuleName;
+    }
+
+    getRuleString(): string {
+        const b = Array.from(this.birthRule).sort((a, c) => a - c).join('');
+        const s = Array.from(this.survivalRule).sort((a, c) => a - c).join('');
+        return `B${b}/S${s}`;
+    }
+
+    getBirthRule(): number[] {
+        return Array.from(this.birthRule);
+    }
+
+    getSurvivalRule(): number[] {
+        return Array.from(this.survivalRule);
     }
 
     getMaxGenerations(): number {
@@ -146,9 +203,9 @@ export class GameEngine {
                 const isAlive = currentGrid[x][y];
 
                 if (isAlive) {
-                    nextGrid[x][y] = neighbors === 2 || neighbors === 3;
+                    nextGrid[x][y] = this.survivalRule.has(neighbors);
                 } else {
-                    nextGrid[x][y] = neighbors === 3;
+                    nextGrid[x][y] = this.birthRule.has(neighbors);
                 }
             }
         }
@@ -207,7 +264,10 @@ export class GameEngine {
             gridSize: this.gridSize,
             generations: this.generations,
             currentGeneration: this.generations.length - 1,
-            toroidal: this.toroidal
+            toroidal: this.toroidal,
+            ruleName: this.currentRuleName,
+            birthRule: Array.from(this.birthRule),
+            survivalRule: Array.from(this.survivalRule)
         };
     }
 
@@ -215,6 +275,13 @@ export class GameEngine {
         this.gridSize = state.gridSize;
         this.generations = state.generations;
         this.toroidal = state.toroidal ?? false;
+
+        // Restore rule configuration
+        if (state.ruleName && state.ruleName !== 'custom' && RULE_PRESETS[state.ruleName]) {
+            this.setRule(state.ruleName);
+        } else if (state.birthRule && state.survivalRule) {
+            this.setCustomRule(state.birthRule, state.survivalRule);
+        }
     }
 
     clear(): void {

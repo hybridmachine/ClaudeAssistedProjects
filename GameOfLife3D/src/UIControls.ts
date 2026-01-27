@@ -51,13 +51,14 @@ export class UIControls {
     private initializeElements(): void {
         const elementIds = [
             'toggle-controls', 'controls',
-            'grid-size', 'toroidal-toggle', 'display-start', 'display-end',
+            'grid-size', 'rule-preset', 'custom-rule-container', 'custom-birth', 'custom-survival', 'apply-custom-rule',
+            'toroidal-toggle', 'display-start', 'display-end',
             'play-pause-btn', 'step-back', 'step-forward',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
             'face-color-cycling', 'edge-color-cycling', 'edge-color', 'edge-color-angle', 'angle-value',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
             'reset-camera',
-            'status-generation', 'status-fps', 'status-cells'
+            'status-generation', 'status-rule', 'status-fps', 'status-cells'
         ];
 
         elementIds.forEach(id => {
@@ -98,6 +99,19 @@ export class UIControls {
             this.elements['toroidal-toggle'].addEventListener('change', (e) => {
                 const target = e.target as HTMLInputElement;
                 this.onToroidalChange(target.checked);
+            });
+        }
+
+        if (this.elements['rule-preset']) {
+            this.elements['rule-preset'].addEventListener('change', (e) => {
+                const target = e.target as HTMLSelectElement;
+                this.onRulePresetChange(target.value);
+            });
+        }
+
+        if (this.elements['apply-custom-rule']) {
+            this.elements['apply-custom-rule'].addEventListener('click', () => {
+                this.onApplyCustomRule();
             });
         }
 
@@ -283,6 +297,59 @@ export class UIControls {
             this.renderCurrentView();
             this.updateUI();
         }
+    }
+
+    private onRulePresetChange(ruleKey: string): void {
+        const customContainer = this.elements['custom-rule-container'];
+
+        if (ruleKey === 'custom') {
+            // Show custom rule input
+            if (customContainer) {
+                customContainer.style.display = 'block';
+            }
+            return;
+        }
+
+        // Hide custom rule input
+        if (customContainer) {
+            customContainer.style.display = 'none';
+        }
+
+        this.gameEngine.setRule(ruleKey);
+        this.recomputeGenerations();
+    }
+
+    private onApplyCustomRule(): void {
+        const birthInput = this.elements['custom-birth'] as HTMLInputElement | undefined;
+        const survivalInput = this.elements['custom-survival'] as HTMLInputElement | undefined;
+
+        if (!birthInput || !survivalInput) {
+            return;
+        }
+
+        const birthStr = birthInput.value.replace(/[^0-8]/g, '');
+        const survivalStr = survivalInput.value.replace(/[^0-8]/g, '');
+
+        const birth = birthStr.split('').map(Number).filter((n, i, a) => a.indexOf(n) === i);
+        const survival = survivalStr.split('').map(Number).filter((n, i, a) => a.indexOf(n) === i);
+
+        this.gameEngine.setCustomRule(birth, survival);
+        this.recomputeGenerations();
+    }
+
+    private recomputeGenerations(): void {
+        // Rule change affects generation computation, so we need to recompute
+        const generations = this.gameEngine.getGenerations();
+        if (generations.length > 1) {
+            const gen0Cells = generations[0].cells;
+            const genCount = generations.length;
+            this.gameEngine.clear();
+            this.gameEngine.initializeFromPattern(gen0Cells);
+            this.gameEngine.computeGenerations(genCount);
+            this.syncDisplayRange();
+        }
+        this.renderCurrentView();
+        this.updateUI();
     }
 
     private onDisplayRangeChange(): void {
@@ -542,6 +609,33 @@ export class UIControls {
                     toroidalToggle.checked = state.toroidal ?? false;
                 }
 
+                // Restore rule preset state
+                const rulePreset = this.elements['rule-preset'] as HTMLSelectElement | undefined;
+                const customContainer = this.elements['custom-rule-container'];
+                if (rulePreset) {
+                    const ruleName = state.ruleName ?? 'conway';
+                    if (ruleName === 'custom') {
+                        rulePreset.value = 'custom';
+                        if (customContainer) {
+                            customContainer.style.display = 'block';
+                        }
+                        // Populate custom rule inputs
+                        const birthInput = this.elements['custom-birth'] as HTMLInputElement | undefined;
+                        const survivalInput = this.elements['custom-survival'] as HTMLInputElement | undefined;
+                        if (birthInput && state.birthRule) {
+                            birthInput.value = state.birthRule.join('');
+                        }
+                        if (survivalInput && state.survivalRule) {
+                            survivalInput.value = state.survivalRule.join('');
+                        }
+                    } else {
+                        rulePreset.value = ruleName;
+                        if (customContainer) {
+                            customContainer.style.display = 'none';
+                        }
+                    }
+                }
+
                 this.syncDisplayRange();
                 this.renderCurrentView();
                 this.updateUI();
@@ -607,6 +701,10 @@ export class UIControls {
 
         if (this.elements['status-generation']) {
             this.elements['status-generation'].textContent = `Gen: ${start}-${end}`;
+        }
+
+        if (this.elements['status-rule']) {
+            this.elements['status-rule'].textContent = `Rule: ${this.gameEngine.getRuleString()}`;
         }
 
         if (this.elements['status-cells']) {
