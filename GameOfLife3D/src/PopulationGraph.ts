@@ -23,7 +23,7 @@ export class PopulationGraph {
         this.canvas.style.cssText = `
             position: absolute;
             bottom: 60px;
-            left: 10px;
+            right: 10px;
             background: rgba(0, 0, 0, 0.7);
             border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 4px;
