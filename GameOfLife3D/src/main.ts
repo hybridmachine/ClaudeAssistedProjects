@@ -3,6 +3,7 @@ import { Renderer3D } from './Renderer3D.js';
 import { CameraController } from './CameraController.js';
 import { UIControls } from './UIControls.js';
 import { PatternLoader } from './PatternLoader.js';
+import { PopulationGraph } from './PopulationGraph.js';
 
 class GameOfLife3D {
     private gameEngine!: GameEngine;
@@ -10,6 +11,7 @@ class GameOfLife3D {
     private cameraController!: CameraController;
     private uiControls!: UIControls;
     private patternLoader!: PatternLoader;
+    private populationGraph!: PopulationGraph;
 
     private canvas!: HTMLCanvasElement;
     private isRunning = false;
@@ -36,12 +38,14 @@ class GameOfLife3D {
         this.renderer = new Renderer3D(this.canvas);
         this.cameraController = new CameraController(this.renderer.getCamera(), this.canvas);
         this.patternLoader = new PatternLoader();
+        this.populationGraph = new PopulationGraph();
 
         this.uiControls = new UIControls(
             this.gameEngine,
             this.renderer,
             this.cameraController,
-            this.patternLoader
+            this.patternLoader,
+            this.populationGraph
         );
     }
 
@@ -121,6 +125,7 @@ class GameOfLife3D {
         this.isRunning = false;
         this.renderer.dispose();
         this.cameraController.dispose();
+        this.populationGraph.destroy();
     }
 }
 

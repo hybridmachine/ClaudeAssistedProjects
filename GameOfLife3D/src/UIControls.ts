@@ -2,6 +2,7 @@ import { GameEngine } from './GameEngine.js';
 import { Renderer3D } from './Renderer3D.js';
 import { CameraController } from './CameraController.js';
 import { PatternLoader } from './PatternLoader.js';
+import { PopulationGraph, GraphSize } from './PopulationGraph.js';
 
 export interface UIState {
     gridSize: number;
@@ -20,6 +21,7 @@ export class UIControls {
     private renderer: Renderer3D;
     private cameraController: CameraController;
     private patternLoader: PatternLoader;
+    private populationGraph: PopulationGraph;
 
     private elements: { [key: string]: HTMLElement } = {};
     private isPlaying = false;
@@ -36,12 +38,14 @@ export class UIControls {
         gameEngine: GameEngine,
         renderer: Renderer3D,
         cameraController: CameraController,
-        patternLoader: PatternLoader
+        patternLoader: PatternLoader,
+        populationGraph: PopulationGraph
     ) {
         this.gameEngine = gameEngine;
         this.renderer = renderer;
         this.cameraController = cameraController;
         this.patternLoader = patternLoader;
+        this.populationGraph = populationGraph;
 
         this.initializeElements();
         this.setupEventListeners();
@@ -56,6 +60,7 @@ export class UIControls {
             'play-pause-btn', 'step-back', 'step-forward', 'reset-simulation',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
             'face-color-cycling', 'edge-color-cycling', 'edge-color', 'edge-color-angle', 'angle-value',
+            'graph-toggle', 'graph-size',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
             'reset-camera',
             'status-generation', 'status-rule', 'status-fps', 'status-cells'
@@ -204,6 +209,20 @@ export class UIControls {
             this.elements['edge-color-angle'].addEventListener('input', (e) => {
                 const target = e.target as HTMLInputElement;
                 this.onEdgeColorAngleChange(parseInt(target.value));
+            });
+        }
+
+        if (this.elements['graph-toggle']) {
+            this.elements['graph-toggle'].addEventListener('change', (e) => {
+                const target = e.target as HTMLInputElement;
+                this.onGraphToggleChange(target.checked);
+            });
+        }
+
+        if (this.elements['graph-size']) {
+            this.elements['graph-size'].addEventListener('change', (e) => {
+                const target = e.target as HTMLSelectElement;
+                this.onGraphSizeChange(target.value as GraphSize);
             });
         }
 
@@ -556,6 +575,23 @@ export class UIControls {
         this.renderCurrentView();
     }
 
+    private onGraphToggleChange(visible: boolean): void {
+        this.populationGraph.setVisible(visible);
+    }
+
+    private onGraphSizeChange(size: GraphSize): void {
+        this.populationGraph.setSize(size);
+        this.renderPopulationGraph();
+    }
+
+    private renderPopulationGraph(): void {
+        const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
+        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0');
+        const generations = this.gameEngine.getGenerations();
+
+        this.populationGraph.render(generations, { min: start, max: end });
+    }
+
     private loadPatternFile(files: FileList | null): void {
         if (!files || files.length === 0) return;
 
@@ -736,6 +772,7 @@ export class UIControls {
         this.cachedTotalCells = totalCells;
 
         this.renderer.renderGenerations(generations, start, end);
+        this.populationGraph.render(generations, { min: start, max: end });
     }
 
     private updateUI(): void {

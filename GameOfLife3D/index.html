@@ -81,6 +81,19 @@
 
                 <div class="control-section">
                     <h3>Visual Settings</h3>
+
+                    <div class="control-group graph-controls">
+                        <label>
+                            <input type="checkbox" id="graph-toggle" checked>
+                            Population Graph
+                        </label>
+                        <select id="graph-size">
+                            <option value="small">Small</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="large">Large</option>
+                        </select>
+                    </div>
+
                     <label for="cell-padding">Cell Padding: <span id="padding-value">20%</span></label>
                     <input type="range" id="cell-padding" min="0" max="100" value="20">
 
