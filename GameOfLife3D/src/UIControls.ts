@@ -786,6 +786,11 @@ export class UIControls {
         this.populationGraph.render(generations, { min: start, max: end });
     }
 
+    refreshCurrentView(): void {
+        this.renderCurrentView();
+        this.updateUI();
+    }
+
     private updateUI(): void {
         const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
         const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '50');
