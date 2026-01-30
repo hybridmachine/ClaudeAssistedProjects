@@ -223,7 +223,7 @@ class GameOfLife3D {
             }
         }
 
-        this.updateView();
+        this.uiControls.refreshCurrentView();
     }
 
     private startRenderLoop(): void {
