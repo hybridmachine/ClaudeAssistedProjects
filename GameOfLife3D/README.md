@@ -12,6 +12,7 @@ A browser-based 3D visualization of Conway's Game of Life. Watch cellular automa
 - **Built-in Patterns**: Glider, Blinker, Pulsar, Gosper's Glider Gun, and R-pentomino
 - **Custom Pattern Support**: Load patterns in RLE (Run-Length Encoded) format
 - **Session Management**: Save and load complete sessions with all generations
+- **Shareable Links**: Copy a URL that restores patterns, rules, and display settings
 - **Visual Customization**: Adjustable cell colors, padding, grid lines, and edge color cycling
 - **Starfield Background**: Dynamic animated starfield with 5000 twinkling stars
 - **Performance Optimized**: Handles grids up to 200x200 with 100+ generations at 30+ FPS
@@ -67,6 +68,7 @@ npm run clean
 4. **Explore**: Navigate through the 3D visualization using camera controls
 5. **Customize**: Adjust visual settings like cell color, padding, and grid lines
 6. **Save**: Export your session or patterns for later use
+7. **Share**: Use "Share Link" to copy a URL that restores your current setup
 
 ## Controls
 
@@ -112,6 +114,7 @@ GameOfLife3D/
 │   ├── CameraController.ts  # Camera controls (keyboard/mouse/touch)
 │   ├── UIControls.ts        # UI event handling
 │   └── PatternLoader.ts     # RLE format parsing and patterns
+│   └── URLHandler.ts        # URL parsing and sharing helpers
 ├── dist/                    # Compiled JavaScript (generated)
 ├── index.html               # Main HTML file
 ├── styles.css               # Application styles
@@ -130,6 +133,26 @@ GameOfLife3D/
 | **R-pentomino** | Methuselah pattern that evolves for 1103+ generations |
 
 ## File Formats
+
+## Shareable Links
+
+Click "Share Link" in the controls panel to copy a URL that restores your current state. The link can include:
+
+- `pattern`: built-in pattern name (glider, blinker, pulsar, glider-gun, r-pentomino)
+- `rle`: URL-encoded RLE for custom patterns
+- `grid`: grid size (25-200)
+- `rule`: preset key or custom `B/S` notation (example: `B36S23`)
+- `gens`: number of computed generations
+- `toroidal`: `true` or `false`
+- `padding`: cell padding percentage (0-100)
+- `colors`: `true` or `false` for face color cycling
+- `range`: display range as `min-max`
+
+Example:
+
+```
+http://localhost:8080/?pattern=glider&grid=75&gens=120&toroidal=true&padding=15&colors=true&range=0-60
+```
 
 ### RLE Pattern Format
 
