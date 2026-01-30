@@ -53,11 +53,6 @@ class GameOfLife3D {
     private setupApplication(): void {
         // Check for URL configuration
         const urlConfig = URLHandler.parseURL();
-        if (URLHandler.hasURLConfig()) {
-            this.applyURLConfig(urlConfig);
-        } else {
-            this.loadDefaultPattern();
-        }
 
         this.renderer.setRenderSettings({
             cellPadding: urlConfig.padding ?? 20,
@@ -66,6 +61,12 @@ class GameOfLife3D {
             showGenerationLabels: true,
             faceColorCycling: urlConfig.colors ?? true
         });
+
+        if (URLHandler.hasURLConfig()) {
+            this.applyURLConfig(urlConfig);
+        } else {
+            this.loadDefaultPattern();
+        }
 
         window.addEventListener('beforeunload', () => {
             this.dispose();
