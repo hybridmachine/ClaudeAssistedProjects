@@ -3,6 +3,7 @@ import { Renderer3D } from './Renderer3D.js';
 import { CameraController } from './CameraController.js';
 import { PatternLoader } from './PatternLoader.js';
 import { PopulationGraph, GraphSize } from './PopulationGraph.js';
+import { URLHandler, URLConfig } from './URLHandler.js';
 
 export interface UIState {
     gridSize: number;
@@ -33,6 +34,7 @@ export class UIControls {
     private lastFpsTime = 0;
     private frameCount = 0;
     private cachedTotalCells = 0;
+    private currentPatternName: string | null = 'r-pentomino';
 
     constructor(
         gameEngine: GameEngine,
@@ -62,6 +64,7 @@ export class UIControls {
             'face-color-cycling', 'edge-color-cycling', 'edge-color', 'edge-color-angle', 'angle-value',
             'graph-toggle', 'graph-size',
             'load-pattern', 'load-pattern-btn', 'save-session', 'load-session', 'load-session-btn',
+            'share-button',
             'reset-camera',
             'status-generation', 'status-rule', 'status-fps', 'status-cells'
         ];
@@ -254,6 +257,10 @@ export class UIControls {
                 const target = e.target as HTMLInputElement;
                 this.loadSessionFile(target.files);
             });
+        }
+
+        if (this.elements['share-button']) {
+            this.elements['share-button'].addEventListener('click', () => this.shareConfiguration());
         }
 
         if (this.elements['reset-camera']) {
@@ -602,6 +609,7 @@ export class UIControls {
             const content = e.target?.result as string;
             try {
                 const pattern = this.patternLoader.parseRLE(content);
+                this.currentPatternName = null; // Custom pattern loaded from file
                 this.gameEngine.initializeFromPattern(pattern);
                 this.syncDisplayRange();
                 this.renderCurrentView();
@@ -638,6 +646,7 @@ export class UIControls {
             const content = e.target?.result as string;
             try {
                 const state = JSON.parse(content);
+                this.currentPatternName = null; // Session may contain custom pattern
                 this.gameEngine.importState(state);
 
                 (this.elements['grid-size'] as HTMLSelectElement).value = state.gridSize.toString();
@@ -691,6 +700,7 @@ export class UIControls {
     private loadBuiltInPattern(patternName: string): void {
         const pattern = this.patternLoader.getBuiltInPattern(patternName);
         if (pattern) {
+            this.currentPatternName = patternName;
             this.gameEngine.initializeFromPattern(pattern);
             this.syncDisplayRange();
             this.renderCurrentView();
@@ -730,6 +740,7 @@ export class UIControls {
         }
 
         // Load default pattern (r-pentomino) to create generation 0
+        this.currentPatternName = 'r-pentomino';
         const defaultPattern = this.patternLoader.getBuiltInPattern('r-pentomino');
         if (defaultPattern) {
             this.gameEngine.initializeFromPattern(defaultPattern);
@@ -819,5 +830,86 @@ export class UIControls {
             isPlaying: this.isPlaying,
             animationSpeed: this.animationSpeed
         };
+    }
+
+    setCurrentPatternName(name: string | null): void {
+        this.currentPatternName = name;
+    }
+
+    private async shareConfiguration(): Promise<void> {
+        const config = this.getCurrentURLConfig();
+        const url = URLHandler.generateURL(config);
+
+        if (URLHandler.isURLTooLong(url)) {
+            this.showToast('URL too long - try using a built-in pattern', true);
+            return;
+        }
+
+        const success = await URLHandler.copyToClipboard(url);
+
+        if (success) {
+            this.showToast('Link copied to clipboard!');
+        } else {
+            this.showToast('Failed to copy - check console', true);
+            console.log('Shareable URL:', url);
+        }
+    }
+
+    private getCurrentURLConfig(): URLConfig {
+        const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
+        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0');
+        const padding = parseInt((this.elements['cell-padding'] as HTMLInputElement)?.value || '20');
+        const colorCycling = (this.elements['face-color-cycling'] as HTMLInputElement)?.checked ?? true;
+
+        const config: URLConfig = {
+            grid: this.gameEngine.getGridSize(),
+            gens: this.gameEngine.getGenerationCount(),
+            toroidal: this.gameEngine.isToroidal(),
+            padding: padding,
+            colors: colorCycling,
+            range: { min: start, max: end }
+        };
+
+        // Use pattern name if available, otherwise export as RLE
+        if (this.currentPatternName) {
+            config.pattern = this.currentPatternName;
+        } else {
+            // Export the initial generation as RLE
+            const gen0 = this.gameEngine.getGeneration(0);
+            if (gen0) {
+                config.rle = this.patternLoader.patternToRLE(gen0.cells);
+            }
+        }
+
+        // Get rule
+        const ruleName = this.gameEngine.getCurrentRule();
+        if (ruleName === 'custom') {
+            // Export as B/S notation
+            const birth = this.gameEngine.getBirthRule().join('');
+            const survival = this.gameEngine.getSurvivalRule().join('');
+            config.rule = `B${birth}S${survival}`;
+        } else {
+            config.rule = ruleName;
+        }
+
+        return config;
+    }
+
+    private showToast(message: string, isError: boolean = false): void {
+        // Remove any existing toast
+        const existingToast = document.querySelector('.toast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'toast' + (isError ? ' toast-error' : '');
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.classList.add('fade-out');
+            setTimeout(() => toast.remove(), 300);
+        }, 2000);
     }
 }
