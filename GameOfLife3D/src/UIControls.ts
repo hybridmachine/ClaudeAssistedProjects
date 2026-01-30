@@ -4,6 +4,7 @@ import { CameraController } from './CameraController.js';
 import { PatternLoader } from './PatternLoader.js';
 import { PopulationGraph, GraphSize } from './PopulationGraph.js';
 import { URLHandler, URLConfig } from './URLHandler.js';
+import { TimelineScrubber } from './TimelineScrubber.js';
 
 export interface UIState {
     gridSize: number;
@@ -23,6 +24,7 @@ export class UIControls {
     private cameraController: CameraController;
     private patternLoader: PatternLoader;
     private populationGraph: PopulationGraph;
+    private timelineScrubber: TimelineScrubber | null = null;
 
     private elements: { [key: string]: HTMLElement } = {};
     private isPlaying = false;
@@ -50,8 +52,37 @@ export class UIControls {
         this.populationGraph = populationGraph;
 
         this.initializeElements();
+        this.initializeTimelineScrubber();
         this.setupEventListeners();
         this.updateUI();
+    }
+
+    private initializeTimelineScrubber(): void {
+        const container = document.getElementById('timeline-container');
+        if (!container) {
+            return;
+        }
+
+        this.timelineScrubber = new TimelineScrubber({
+            container,
+            onRangeChange: (start, end) => {
+                this.setDisplayRange(start, end);
+            },
+            onPlayToggle: (playing) => {
+                if (playing) {
+                    this.startAnimation();
+                } else {
+                    this.stopAnimation();
+                }
+            },
+            onSpeedChange: (multiplier) => {
+                this.animationSpeed = Math.max(10, Math.round(200 / multiplier));
+            }
+        });
+
+        this.timelineScrubber.setTotalGenerations(this.gameEngine.getGenerationCount());
+        this.timelineScrubber.setRange(this.getDisplayStart(), this.getDisplayEnd());
+        this.timelineScrubber.setPlaying(this.isPlaying);
     }
 
     private initializeElements(): void {
@@ -383,12 +414,13 @@ export class UIControls {
     }
 
     private onDisplayRangeChange(): void {
-        const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
-        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0');
+        const start = this.getDisplayStart();
+        const end = this.getDisplayEnd();
 
         if (start <= end) {
             this.renderCurrentView();
             this.updateUI();
+            this.timelineScrubber?.setRange(start, end);
         }
     }
 
@@ -403,12 +435,14 @@ export class UIControls {
     private startAnimation(): void {
         this.isPlaying = true;
         this.updatePlayPauseButton();
+        this.timelineScrubber?.setPlaying(true);
         this.animate();
     }
 
     private stopAnimation(): void {
         this.isPlaying = false;
         this.updatePlayPauseButton();
+        this.timelineScrubber?.setPlaying(false);
     }
 
     private updatePlayPauseButton(): void {
@@ -442,8 +476,8 @@ export class UIControls {
                     startInput.max = maxGen.toString();
                 }
 
-                this.renderCurrentView();
-                this.updateUI();
+                this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
+                this.timelineScrubber?.setEndGeneration(this.getDisplayEnd());
             } else {
                 // Reached max generations, stop playing
                 this.stopAnimation();
@@ -487,6 +521,7 @@ export class UIControls {
                 // Update input max values
                 startInput.max = maxGen.toString();
                 endInput.max = maxGen.toString();
+                this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
             } else {
                 // At max, can't step forward
                 return;
@@ -512,6 +547,7 @@ export class UIControls {
         startInput.value = newStart.toString();
         endInput.value = newEnd.toString();
 
+        this.timelineScrubber?.setRange(newStart, newEnd);
         this.renderCurrentView();
         this.updateUI();
     }
@@ -612,6 +648,8 @@ export class UIControls {
                 this.currentPatternName = null; // Custom pattern loaded from file
                 this.gameEngine.initializeFromPattern(pattern);
                 this.syncDisplayRange();
+                this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
+                this.timelineScrubber?.setRange(this.getDisplayStart(), this.getDisplayEnd());
                 this.renderCurrentView();
                 this.updateUI();
             } catch (error) {
@@ -686,6 +724,8 @@ export class UIControls {
                 }
 
                 this.syncDisplayRange();
+                this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
+                this.timelineScrubber?.setRange(this.getDisplayStart(), this.getDisplayEnd());
                 this.renderCurrentView();
                 this.updateUI();
             } catch (error) {
@@ -703,6 +743,8 @@ export class UIControls {
             this.currentPatternName = patternName;
             this.gameEngine.initializeFromPattern(pattern);
             this.syncDisplayRange();
+            this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
+            this.timelineScrubber?.setRange(this.getDisplayStart(), this.getDisplayEnd());
             this.renderCurrentView();
             this.updateUI();
         }
@@ -748,6 +790,8 @@ export class UIControls {
 
         // Sync display range and update view
         this.syncDisplayRange();
+        this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
+        this.timelineScrubber?.setRange(this.getDisplayStart(), this.getDisplayEnd());
         this.renderCurrentView();
         this.updateUI();
     }
@@ -766,11 +810,14 @@ export class UIControls {
         startInput.value = '0';
         endInput.max = maxGen.toString();
         endInput.value = maxGen.toString();
+
+        this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
+        this.timelineScrubber?.setRange(this.getDisplayStart(), this.getDisplayEnd());
     }
 
     private renderCurrentView(): void {
-        const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
-        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '50');
+        const start = this.getDisplayStart();
+        const end = this.getDisplayEnd();
         const generations = this.gameEngine.getGenerations();
 
         // Compute and cache total cells for visible generations
@@ -786,14 +833,43 @@ export class UIControls {
         this.populationGraph.render(generations, { min: start, max: end });
     }
 
+    private setDisplayRange(start: number, end: number): void {
+        const startInput = this.elements['display-start'] as HTMLInputElement | undefined;
+        const endInput = this.elements['display-end'] as HTMLInputElement | undefined;
+
+        if (!startInput || !endInput) {
+            return;
+        }
+
+        const maxGen = Math.max(0, this.gameEngine.getGenerationCount() - 1);
+        const clampedStart = Math.max(0, Math.min(maxGen, start));
+        const clampedEnd = Math.max(0, Math.min(maxGen, end));
+        const normalizedStart = Math.min(clampedStart, clampedEnd);
+        const normalizedEnd = Math.max(clampedStart, clampedEnd);
+
+        startInput.value = normalizedStart.toString();
+        endInput.value = normalizedEnd.toString();
+        this.renderCurrentView();
+        this.updateUI();
+    }
+
+    private getDisplayStart(): number {
+        return parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
+    }
+
+    private getDisplayEnd(): number {
+        return parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0');
+    }
+
     refreshCurrentView(): void {
+        this.timelineScrubber?.setRange(this.getDisplayStart(), this.getDisplayEnd());
         this.renderCurrentView();
         this.updateUI();
     }
 
     private updateUI(): void {
-        const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
-        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '50');
+        const start = this.getDisplayStart();
+        const end = this.getDisplayEnd();
 
         if (this.elements['status-generation']) {
             this.elements['status-generation'].textContent = `Gen: ${start}-${end}`;
