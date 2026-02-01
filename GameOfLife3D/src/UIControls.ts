@@ -31,6 +31,8 @@ export class UIControls {
     private animationSpeed = 200;
     private currentAnimationFrame = 0;
     private lastAnimationTime = 0;
+    private displayStart = 0;
+    private displayEnd = 0;
 
     private fpsCounter = 0;
     private lastFpsTime = 0;
@@ -77,6 +79,9 @@ export class UIControls {
             },
             onSpeedChange: (multiplier) => {
                 this.animationSpeed = Math.max(10, Math.round(200 / multiplier));
+            },
+            onReset: () => {
+                this.resetSimulation();
             }
         });
 
@@ -89,8 +94,7 @@ export class UIControls {
         const elementIds = [
             'toggle-controls', 'controls',
             'grid-size', 'rule-preset', 'custom-rule-container', 'custom-birth', 'custom-survival', 'apply-custom-rule',
-            'toroidal-toggle', 'display-start', 'display-end',
-            'play-pause-btn', 'step-back', 'step-forward', 'reset-simulation',
+            'toroidal-toggle',
             'cell-padding', 'padding-value', 'cell-color', 'grid-lines', 'generation-labels',
             'face-color-cycling', 'edge-color-cycling', 'edge-color', 'edge-color-angle', 'angle-value',
             'graph-toggle', 'graph-size',
@@ -152,36 +156,6 @@ export class UIControls {
             this.elements['apply-custom-rule'].addEventListener('click', () => {
                 this.onApplyCustomRule();
             });
-        }
-
-        if (this.elements['display-start']) {
-            this.elements['display-start'].addEventListener('input', (e) => {
-                const target = e.target as HTMLInputElement;
-                this.onDisplayRangeChange();
-            });
-        }
-
-        if (this.elements['display-end']) {
-            this.elements['display-end'].addEventListener('input', (e) => {
-                const target = e.target as HTMLInputElement;
-                this.onDisplayRangeChange();
-            });
-        }
-
-        if (this.elements['play-pause-btn']) {
-            this.elements['play-pause-btn'].addEventListener('click', () => this.togglePlayPause());
-        }
-
-        if (this.elements['step-back']) {
-            this.elements['step-back'].addEventListener('click', () => this.stepGeneration(-1));
-        }
-
-        if (this.elements['step-forward']) {
-            this.elements['step-forward'].addEventListener('click', () => this.stepGeneration(1));
-        }
-
-        if (this.elements['reset-simulation']) {
-            this.elements['reset-simulation'].addEventListener('click', () => this.resetSimulation());
         }
 
         if (this.elements['cell-padding']) {
@@ -413,43 +387,19 @@ export class UIControls {
         this.updateUI();
     }
 
-    private onDisplayRangeChange(): void {
-        const start = this.getDisplayStart();
-        const end = this.getDisplayEnd();
-
-        if (start <= end) {
-            this.renderCurrentView();
-            this.updateUI();
-            this.timelineScrubber?.setRange(start, end);
-        }
-    }
-
-    private togglePlayPause(): void {
-        if (this.isPlaying) {
-            this.stopAnimation();
-        } else {
-            this.startAnimation();
-        }
-    }
-
     private startAnimation(): void {
         this.isPlaying = true;
         this.updatePlayPauseButton();
-        this.timelineScrubber?.setPlaying(true);
         this.animate();
     }
 
     private stopAnimation(): void {
         this.isPlaying = false;
         this.updatePlayPauseButton();
-        this.timelineScrubber?.setPlaying(false);
     }
 
     private updatePlayPauseButton(): void {
-        const btn = this.elements['play-pause-btn'] as HTMLButtonElement | undefined;
-        if (btn) {
-            btn.textContent = this.isPlaying ? 'Pause' : 'Play';
-        }
+        this.timelineScrubber?.setPlaying(this.isPlaying);
     }
 
     private animate(): void {
@@ -462,19 +412,9 @@ export class UIControls {
 
             if (computed) {
                 // Update display range to show the growing timeline
-                const endInput = this.elements['display-end'] as HTMLInputElement | undefined;
-                if (endInput) {
-                    const maxGen = this.gameEngine.getGenerationCount() - 1;
-                    endInput.value = maxGen.toString();
-                    endInput.max = maxGen.toString();
-                }
-
-                // Update start input max as well
-                const startInput = this.elements['display-start'] as HTMLInputElement | undefined;
-                if (startInput) {
-                    const maxGen = this.gameEngine.getGenerationCount() - 1;
-                    startInput.max = maxGen.toString();
-                }
+                const maxGen = this.gameEngine.getGenerationCount() - 1;
+                this.displayEnd = Math.min(this.displayEnd, maxGen);
+                this.displayStart = Math.min(this.displayStart, this.displayEnd);
 
                 this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
                 this.timelineScrubber?.setEndGeneration(this.getDisplayEnd());
@@ -489,68 +429,6 @@ export class UIControls {
         requestAnimationFrame(() => this.animate());
     }
 
-    private stepGeneration(direction: number): void {
-        const startInput = this.elements['display-start'] as HTMLInputElement | undefined;
-        const endInput = this.elements['display-end'] as HTMLInputElement | undefined;
-
-        if (!startInput || !endInput) {
-            console.warn('Display range inputs not found');
-            return;
-        }
-
-        const start = parseInt(startInput.value || '0');
-        const end = parseInt(endInput.value || '0');
-        let maxGen = this.gameEngine.getGenerationCount() - 1;
-
-        // Ensure we have valid generations to step through
-        if (maxGen < 0) {
-            return;
-        }
-
-        const windowSize = end - start;
-
-        // Calculate new positions
-        let newStart = start + direction;
-        let newEnd = end + direction;
-
-        // If stepping forward and at the edge, compute a new generation
-        if (direction > 0 && newEnd > maxGen) {
-            const computed = this.gameEngine.computeSingleGeneration();
-            if (computed) {
-                maxGen = this.gameEngine.getGenerationCount() - 1;
-                // Update input max values
-                startInput.max = maxGen.toString();
-                endInput.max = maxGen.toString();
-                this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
-            } else {
-                // At max, can't step forward
-                return;
-            }
-        }
-
-        // Boundary checks
-        if (direction > 0 && newEnd > maxGen) {
-            newEnd = maxGen;
-            newStart = Math.max(0, newEnd - windowSize);
-        }
-
-        if (direction < 0 && newStart < 0) {
-            // Stepping backward: stop if already at the start
-            if (start <= 0) {
-                return; // Already at the start, can't step backward
-            }
-            // Clamp to the start while preserving window size if possible
-            newStart = 0;
-            newEnd = Math.min(maxGen, newStart + windowSize);
-        }
-
-        startInput.value = newStart.toString();
-        endInput.value = newEnd.toString();
-
-        this.timelineScrubber?.setRange(newStart, newEnd);
-        this.renderCurrentView();
-        this.updateUI();
-    }
 
     private onCellPaddingChange(padding: number): void {
         if (this.elements['padding-value']) {
@@ -628,11 +506,9 @@ export class UIControls {
     }
 
     private renderPopulationGraph(): void {
-        const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
-        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0');
         const generations = this.gameEngine.getGenerations();
 
-        this.populationGraph.render(generations, { min: start, max: end });
+        this.populationGraph.render(generations, { min: this.displayStart, max: this.displayEnd });
     }
 
     private loadPatternFile(files: FileList | null): void {
@@ -797,27 +673,18 @@ export class UIControls {
     }
 
     syncDisplayRange(): void {
-        const startInput = this.elements['display-start'] as HTMLInputElement | undefined;
-        const endInput = this.elements['display-end'] as HTMLInputElement | undefined;
-
-        if (!startInput || !endInput) {
-            return;
-        }
-
         const maxGen = Math.max(0, this.gameEngine.getGenerationCount() - 1);
 
-        startInput.max = maxGen.toString();
-        startInput.value = '0';
-        endInput.max = maxGen.toString();
-        endInput.value = maxGen.toString();
+        this.displayStart = 0;
+        this.displayEnd = maxGen;
 
         this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
         this.timelineScrubber?.setRange(this.getDisplayStart(), this.getDisplayEnd());
     }
 
     private renderCurrentView(): void {
-        const start = this.getDisplayStart();
-        const end = this.getDisplayEnd();
+        const start = this.displayStart;
+        const end = this.displayEnd;
         const generations = this.gameEngine.getGenerations();
 
         // Compute and cache total cells for visible generations
@@ -834,31 +701,24 @@ export class UIControls {
     }
 
     private setDisplayRange(start: number, end: number): void {
-        const startInput = this.elements['display-start'] as HTMLInputElement | undefined;
-        const endInput = this.elements['display-end'] as HTMLInputElement | undefined;
-
-        if (!startInput || !endInput) {
-            return;
-        }
-
         const maxGen = Math.max(0, this.gameEngine.getGenerationCount() - 1);
         const clampedStart = Math.max(0, Math.min(maxGen, start));
         const clampedEnd = Math.max(0, Math.min(maxGen, end));
         const normalizedStart = Math.min(clampedStart, clampedEnd);
         const normalizedEnd = Math.max(clampedStart, clampedEnd);
 
-        startInput.value = normalizedStart.toString();
-        endInput.value = normalizedEnd.toString();
+        this.displayStart = normalizedStart;
+        this.displayEnd = normalizedEnd;
         this.renderCurrentView();
         this.updateUI();
     }
 
     private getDisplayStart(): number {
-        return parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
+        return this.displayStart;
     }
 
     private getDisplayEnd(): number {
-        return parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0');
+        return this.displayEnd;
     }
 
     refreshCurrentView(): void {
@@ -868,8 +728,8 @@ export class UIControls {
     }
 
     private updateUI(): void {
-        const start = this.getDisplayStart();
-        const end = this.getDisplayEnd();
+        const start = this.displayStart;
+        const end = this.displayEnd;
 
         if (this.elements['status-generation']) {
             this.elements['status-generation'].textContent = `Gen: ${start}-${end}`;
@@ -902,8 +762,8 @@ export class UIControls {
     getState(): UIState {
         return {
             gridSize: parseInt((this.elements['grid-size'] as HTMLSelectElement)?.value || '50'),
-            displayStart: parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0'),
-            displayEnd: parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0'),
+            displayStart: this.displayStart,
+            displayEnd: this.displayEnd,
             cellPadding: parseInt((this.elements['cell-padding'] as HTMLInputElement)?.value || '20'),
             cellColor: (this.elements['cell-color'] as HTMLInputElement)?.value || '#00ff88',
             showGridLines: (this.elements['grid-lines'] as HTMLInputElement)?.checked || true,
@@ -937,8 +797,6 @@ export class UIControls {
     }
 
     private getCurrentURLConfig(): URLConfig {
-        const start = parseInt((this.elements['display-start'] as HTMLInputElement)?.value || '0');
-        const end = parseInt((this.elements['display-end'] as HTMLInputElement)?.value || '0');
         const padding = parseInt((this.elements['cell-padding'] as HTMLInputElement)?.value || '20');
         const colorCycling = (this.elements['face-color-cycling'] as HTMLInputElement)?.checked ?? true;
 
@@ -948,7 +806,7 @@ export class UIControls {
             toroidal: this.gameEngine.isToroidal(),
             padding: padding,
             colors: colorCycling,
-            range: { min: start, max: end }
+            range: { min: this.displayStart, max: this.displayEnd }
         };
 
         // Use pattern name if available, otherwise export as RLE

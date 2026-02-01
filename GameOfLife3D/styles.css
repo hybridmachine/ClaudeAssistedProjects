@@ -116,16 +116,6 @@ body {
     color: #000;
 }
 
-.play-controls {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px;
-    margin-top: 10px;
-}
-
-.play-controls button:first-child {
-    grid-column: 1 / -1;
-}
 
 .pattern-btn {
     margin-bottom: 5px !important;
@@ -315,6 +305,10 @@ body.controls-collapsed #timeline-container {
     background: rgba(0, 255, 136, 0.2);
     border-color: rgba(0, 255, 136, 0.5);
     font-weight: 600;
+}
+
+.transport-btn.reset-btn {
+    min-width: 54px;
 }
 
 .timeline-track-container {

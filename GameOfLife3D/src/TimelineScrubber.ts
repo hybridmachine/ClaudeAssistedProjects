@@ -3,6 +3,7 @@ export interface TimelineConfig {
   onRangeChange: (start: number, end: number) => void;
   onPlayToggle: (playing: boolean) => void;
   onSpeedChange: (multiplier: number) => void;
+  onReset: () => void;
 }
 
 export class TimelineScrubber {
@@ -12,6 +13,7 @@ export class TimelineScrubber {
   private endHandle!: HTMLElement;
   private rangeFill!: HTMLElement;
   private playButton!: HTMLButtonElement;
+  private resetButton!: HTMLButtonElement;
   private timeDisplay!: HTMLElement;
   private speedSelect!: HTMLSelectElement;
 
@@ -26,6 +28,7 @@ export class TimelineScrubber {
   private onRangeChange: (start: number, end: number) => void;
   private onPlayToggle: (playing: boolean) => void;
   private onSpeedChange: (multiplier: number) => void;
+  private onReset: () => void;
 
   private readonly boundHandleContainerClick = (event: Event) => this.handleContainerClick(event);
   private readonly boundHandlePointerDown = (event: PointerEvent) => this.handlePointerDown(event);
@@ -40,6 +43,7 @@ export class TimelineScrubber {
     this.onRangeChange = config.onRangeChange;
     this.onPlayToggle = config.onPlayToggle;
     this.onSpeedChange = config.onSpeedChange;
+    this.onReset = config.onReset;
 
     this.createDOM();
     this.attachEventListeners();
@@ -54,6 +58,7 @@ export class TimelineScrubber {
           <button class="transport-btn play-btn" data-action="play" title="Play/Pause (Space)" aria-label="Play">Play</button>
           <button class="transport-btn" data-action="next" title="Next (Right)" aria-label="Next generation">&gt;</button>
           <button class="transport-btn" data-action="last" title="Last (End)" aria-label="Last generation">&gt;|</button>
+          <button class="transport-btn reset-btn" data-action="reset" title="Reset simulation" aria-label="Reset simulation">Reset</button>
         </div>
 
         <div class="timeline-track-container">
@@ -88,6 +93,7 @@ export class TimelineScrubber {
     this.endHandle = this.container.querySelector('.end-handle') as HTMLElement;
     this.rangeFill = this.container.querySelector('.timeline-range') as HTMLElement;
     this.playButton = this.container.querySelector('.play-btn') as HTMLButtonElement;
+    this.resetButton = this.container.querySelector('.reset-btn') as HTMLButtonElement;
     this.timeDisplay = this.container.querySelector('.time-display') as HTMLElement;
     this.speedSelect = this.container.querySelector('.speed-select') as HTMLSelectElement;
   }
@@ -130,6 +136,9 @@ export class TimelineScrubber {
         break;
       case 'last':
         this.seekEndTo(this.totalGenerations - 1);
+        break;
+      case 'reset':
+        this.onReset();
         break;
       default:
         break;
