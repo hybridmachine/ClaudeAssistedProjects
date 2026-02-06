@@ -17,6 +17,16 @@ export class PopulationGraph {
     private hoveredGeneration: number | null = null;
     private hoveredPopulation: number | null = null;
 
+    // Bound handlers for proper cleanup
+    private boundHandleMouseMove = (e: MouseEvent) => this.handleMouseMove(e);
+    private boundHandleMouseLeave = () => this.handleMouseLeave();
+
+    // Dirty-state tracking to skip redundant redraws
+    private lastGenCount = -1;
+    private lastRangeMin = -1;
+    private lastRangeMax = -1;
+    private isDirty = true;
+
     constructor() {
         this.canvas = document.createElement('canvas');
         this.canvas.id = 'population-graph';
@@ -39,8 +49,8 @@ export class PopulationGraph {
     }
 
     private setupEventListeners(): void {
-        this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-        this.canvas.addEventListener('mouseleave', () => this.handleMouseLeave());
+        this.canvas.addEventListener('mousemove', this.boundHandleMouseMove);
+        this.canvas.addEventListener('mouseleave', this.boundHandleMouseLeave);
     }
 
     private handleMouseMove(e: MouseEvent): void {
@@ -50,18 +60,17 @@ export class PopulationGraph {
 
         // Store coordinates for tooltip rendering
         const padding = { top: 20, right: 10, bottom: 25, left: 40 };
-        const graphWidth = this.canvas.width - padding.left - padding.right;
 
         // Check if mouse is in the graph area
         if (x >= padding.left && x <= this.canvas.width - padding.right &&
             y >= padding.top && y <= this.canvas.height - padding.bottom) {
-            // Store the x position relative to graph area for later use in render
             this.canvas.dataset.mouseX = x.toString();
             this.canvas.dataset.mouseY = y.toString();
         } else {
             delete this.canvas.dataset.mouseX;
             delete this.canvas.dataset.mouseY;
         }
+        this.isDirty = true;
     }
 
     private handleMouseLeave(): void {
@@ -69,6 +78,7 @@ export class PopulationGraph {
         delete this.canvas.dataset.mouseY;
         this.hoveredGeneration = null;
         this.hoveredPopulation = null;
+        this.isDirty = true;
     }
 
     public setSize(size: GraphSize): void {
@@ -76,6 +86,7 @@ export class PopulationGraph {
         const dims = this.SIZES[size];
         this.canvas.width = dims.width;
         this.canvas.height = dims.height;
+        this.isDirty = true;
     }
 
     public getSize(): GraphSize {
@@ -85,6 +96,7 @@ export class PopulationGraph {
     public setVisible(visible: boolean): void {
         this.visible = visible;
         this.canvas.style.display = visible ? 'block' : 'none';
+        if (visible) this.isDirty = true;
     }
 
     public isVisible(): boolean {
@@ -93,6 +105,19 @@ export class PopulationGraph {
 
     public render(generations: Generation[], currentRange: { min: number, max: number }): void {
         if (!this.visible || generations.length === 0) return;
+
+        // Check if anything changed since the last render
+        const genCount = generations.length;
+        if (!this.isDirty &&
+            genCount === this.lastGenCount &&
+            currentRange.min === this.lastRangeMin &&
+            currentRange.max === this.lastRangeMax) {
+            return;
+        }
+        this.lastGenCount = genCount;
+        this.lastRangeMin = currentRange.min;
+        this.lastRangeMax = currentRange.max;
+        this.isDirty = false;
 
         const { width, height } = this.canvas;
         const padding = { top: 20, right: 10, bottom: 25, left: 40 };
@@ -246,6 +271,8 @@ export class PopulationGraph {
     }
 
     public destroy(): void {
+        this.canvas.removeEventListener('mousemove', this.boundHandleMouseMove);
+        this.canvas.removeEventListener('mouseleave', this.boundHandleMouseLeave);
         this.canvas.remove();
     }
 }

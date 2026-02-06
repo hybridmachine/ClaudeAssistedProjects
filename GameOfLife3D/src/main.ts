@@ -17,6 +17,9 @@ class GameOfLife3D {
     private canvas!: HTMLCanvasElement;
     private isRunning = false;
 
+    // Pre-bound render callback to avoid per-frame closure allocation
+    private boundRender = (timestamp: DOMHighResTimeStamp) => this.render(timestamp);
+
     constructor() {
         this.initializeCanvas();
         this.initializeComponents();
@@ -228,17 +231,18 @@ class GameOfLife3D {
 
     private startRenderLoop(): void {
         this.isRunning = true;
-        this.render();
+        requestAnimationFrame(this.boundRender);
     }
 
-    private render(): void {
+    private render(timestamp: DOMHighResTimeStamp): void {
         if (!this.isRunning) return;
 
+        this.uiControls.tick(timestamp);
         this.cameraController.update();
         this.renderer.render();
         this.uiControls.updateFPS();
 
-        requestAnimationFrame(() => this.render());
+        requestAnimationFrame(this.boundRender);
     }
 
     private pauseApplication(): void {
@@ -250,12 +254,13 @@ class GameOfLife3D {
         if (!this.isRunning) {
             this.isRunning = true;
             this.cameraController.setEnabled(true);
-            this.render();
+            requestAnimationFrame(this.boundRender);
         }
     }
 
     private dispose(): void {
         this.isRunning = false;
+        this.uiControls.dispose();
         this.renderer.dispose();
         this.cameraController.dispose();
         this.populationGraph.destroy();
