@@ -15,6 +15,39 @@ export interface RenderSettings {
     faceColorCycling?: boolean;
 }
 
+// Shared GLSL: instanced vertex shader used by both face and edge materials
+const INSTANCED_VERTEX_SHADER = `
+    varying vec3 vWorldPosition;
+    void main() {
+        vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    }
+`;
+
+// Shared GLSL: computes animated Y-position normalized to 0-1 and the 5-color gradient
+const GRADIENT_FUNCTIONS_GLSL = `
+    vec3 computeGradientColor(float worldY, float minZ, float maxZ, float time) {
+        float range = maxZ - minZ;
+        float offset = mod(time, range);
+        float adjustedY = mod(worldY - minZ - offset, range);
+        float t = adjustedY / range;
+
+        vec3 blue = vec3(0.0, 0.0, 1.0);
+        vec3 green = vec3(0.0, 1.0, 0.0);
+        vec3 yellow = vec3(1.0, 1.0, 0.0);
+        vec3 black = vec3(0.0, 0.0, 0.0);
+        vec3 purple = vec3(0.5, 0.0, 0.5);
+
+        float segment = t * 5.0;
+        if (segment < 1.0) return mix(blue, green, segment);
+        if (segment < 2.0) return mix(green, yellow, segment - 1.0);
+        if (segment < 3.0) return mix(yellow, black, segment - 2.0);
+        if (segment < 4.0) return mix(black, purple, segment - 3.0);
+        return mix(purple, blue, segment - 4.0);
+    }
+`;
+
 export class Renderer3D {
     private scene: THREE.Scene;
     private camera!: THREE.PerspectiveCamera;
@@ -25,6 +58,9 @@ export class Renderer3D {
     private starField: THREE.Points | null = null;
     private generationLabels: THREE.Sprite[] = [];
     private galaxies: THREE.Mesh[] = [];
+
+    // Pooled matrix for instance updates
+    private _instanceMatrix = new THREE.Matrix4();
 
     // Label caching
     private lastLabelStart: number = -1;
@@ -233,7 +269,15 @@ export class Renderer3D {
                 }
             }
 
-            const texture = new THREE.CanvasTexture(canvas);
+            // Copy pixel data into a DataTexture to release the canvas from memory
+            const imageData = ctx.getImageData(0, 0, size, size);
+            const texture = new THREE.DataTexture(
+                imageData.data,
+                size,
+                size,
+                THREE.RGBAFormat
+            );
+            texture.needsUpdate = true;
 
             const galaxyMaterial = new THREE.MeshBasicMaterial({
                 map: texture,
@@ -348,14 +392,7 @@ export class Renderer3D {
                     maxZ: { value: 50.0 },
                     time: { value: 0.0 }
                 },
-                vertexShader: `
-                    varying vec3 vWorldPosition;
-                    void main() {
-                        vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
-                        vWorldPosition = worldPosition.xyz;
-                        gl_Position = projectionMatrix * viewMatrix * worldPosition;
-                    }
-                `,
+                vertexShader: INSTANCED_VERTEX_SHADER,
                 fragmentShader: `
                     uniform vec3 startColor;
                     uniform vec3 endColor;
@@ -364,39 +401,10 @@ export class Renderer3D {
                     uniform float time;
                     varying vec3 vWorldPosition;
 
-                    #define PI 3.14159265359
+                    ${GRADIENT_FUNCTIONS_GLSL}
 
                     void main() {
-                        float range = maxZ - minZ;
-                        float offset = mod(time, range);
-                        float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
-
-                        // Normalize position to 0-1 range
-                        float t = adjustedY / range;
-
-                        // Define colors: blue, green, yellow, black, purple
-                        vec3 blue = vec3(0.0, 0.0, 1.0);
-                        vec3 green = vec3(0.0, 1.0, 0.0);
-                        vec3 yellow = vec3(1.0, 1.0, 0.0);
-                        vec3 black = vec3(0.0, 0.0, 0.0);
-                        vec3 purple = vec3(0.5, 0.0, 0.5);
-
-                        // Cycle through 5 colors (0-0.2: blue->green, 0.2-0.4: green->yellow, 0.4-0.6: yellow->black, 0.6-0.8: black->purple, 0.8-1: purple->blue)
-                        vec3 color;
-                        float segment = t * 5.0;
-
-                        if (segment < 1.0) {
-                            color = mix(blue, green, segment);
-                        } else if (segment < 2.0) {
-                            color = mix(green, yellow, segment - 1.0);
-                        } else if (segment < 3.0) {
-                            color = mix(yellow, black, segment - 2.0);
-                        } else if (segment < 4.0) {
-                            color = mix(black, purple, segment - 3.0);
-                        } else {
-                            color = mix(purple, blue, segment - 4.0);
-                        }
-
+                        vec3 color = computeGradientColor(vWorldPosition.y, minZ, maxZ, time);
                         gl_FragColor = vec4(color, 1.0);
                     }
                 `
@@ -417,20 +425,15 @@ export class Renderer3D {
                     time: { value: 0.0 },
                     hueAngle: { value: this.edgeColorAngle }
                 },
-                vertexShader: `
-                    varying vec3 vWorldPosition;
-                    void main() {
-                        vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
-                        vWorldPosition = worldPosition.xyz;
-                        gl_Position = projectionMatrix * viewMatrix * worldPosition;
-                    }
-                `,
+                vertexShader: INSTANCED_VERTEX_SHADER,
                 fragmentShader: `
                     uniform float minZ;
                     uniform float maxZ;
                     uniform float time;
                     uniform float hueAngle;
                     varying vec3 vWorldPosition;
+
+                    ${GRADIENT_FUNCTIONS_GLSL}
 
                     // RGB to HSL conversion
                     vec3 rgb2hsl(vec3 c) {
@@ -488,34 +491,7 @@ export class Renderer3D {
                     }
 
                     void main() {
-                        float range = maxZ - minZ;
-                        float offset = mod(time, range);
-                        float adjustedY = mod(vWorldPosition.y - minZ - offset, range);
-
-                        // Normalize position to 0-1 range
-                        float t = adjustedY / range;
-
-                        // Calculate face color (same as face shader)
-                        vec3 blue = vec3(0.0, 0.0, 1.0);
-                        vec3 green = vec3(0.0, 1.0, 0.0);
-                        vec3 yellow = vec3(1.0, 1.0, 0.0);
-                        vec3 black = vec3(0.0, 0.0, 0.0);
-                        vec3 purple = vec3(0.5, 0.0, 0.5);
-
-                        vec3 faceColor;
-                        float segment = t * 5.0;
-
-                        if (segment < 1.0) {
-                            faceColor = mix(blue, green, segment);
-                        } else if (segment < 2.0) {
-                            faceColor = mix(green, yellow, segment - 1.0);
-                        } else if (segment < 3.0) {
-                            faceColor = mix(yellow, black, segment - 2.0);
-                        } else if (segment < 4.0) {
-                            faceColor = mix(black, purple, segment - 3.0);
-                        } else {
-                            faceColor = mix(purple, blue, segment - 4.0);
-                        }
+                        vec3 faceColor = computeGradientColor(vWorldPosition.y, minZ, maxZ, time);
 
                         // Convert to HSL, rotate hue by angle, convert back
                         vec3 hsl = rgb2hsl(faceColor);
@@ -533,14 +509,16 @@ export class Renderer3D {
                     }
                 `,
                 wireframe: true,
-                transparent: true
+                transparent: true,
+                depthWrite: false
             });
         } else {
             wireframeMaterial = new THREE.MeshBasicMaterial({
                 color: new THREE.Color(this.edgeColor),
                 wireframe: true,
                 transparent: true,
-                opacity: 0.8
+                opacity: 0.8,
+                depthWrite: false
             });
         }
 
@@ -643,9 +621,7 @@ export class Renderer3D {
                             generations.length !== this.lastGenerationCount;
 
         if (stateChanged) {
-            const matrix = new THREE.Matrix4();
             let instanceIndex = 0;
-
             const halfSize = this.gridSize / 2;
 
             for (let genIndex = displayStart; genIndex <= displayEnd && genIndex < generations.length; genIndex++) {
@@ -659,9 +635,9 @@ export class Renderer3D {
                     const y = genIndex;
                     const z = cell.y - halfSize;
 
-                    matrix.setPosition(x, y, z);
-                    this.instancedMesh!.setMatrixAt(instanceIndex, matrix);
-                    this.wireframeMesh!.setMatrixAt(instanceIndex, matrix);
+                    this._instanceMatrix.setPosition(x, y, z);
+                    this.instancedMesh!.setMatrixAt(instanceIndex, this._instanceMatrix);
+                    this.wireframeMesh!.setMatrixAt(instanceIndex, this._instanceMatrix);
                     instanceIndex++;
                 }
             }

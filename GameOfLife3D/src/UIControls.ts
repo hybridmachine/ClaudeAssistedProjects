@@ -29,7 +29,6 @@ export class UIControls {
     private elements: { [key: string]: HTMLElement } = {};
     private isPlaying = false;
     private animationSpeed = 200;
-    private currentAnimationFrame = 0;
     private lastAnimationTime = 0;
     private displayStart = 0;
     private displayEnd = 0;
@@ -389,29 +388,25 @@ export class UIControls {
 
     private startAnimation(): void {
         this.isPlaying = true;
-        this.updatePlayPauseButton();
-        this.animate();
+        this.timelineScrubber?.setPlaying(this.isPlaying);
     }
 
     private stopAnimation(): void {
         this.isPlaying = false;
-        this.updatePlayPauseButton();
-    }
-
-    private updatePlayPauseButton(): void {
         this.timelineScrubber?.setPlaying(this.isPlaying);
     }
 
-    private animate(): void {
+    /**
+     * Called once per frame from the main render loop.
+     * Handles animation stepping using the rAF-provided timestamp.
+     */
+    tick(timestamp: DOMHighResTimeStamp): void {
         if (!this.isPlaying) return;
 
-        const now = Date.now();
-        if (now - this.lastAnimationTime > this.animationSpeed) {
-            // Compute the next generation
+        if (timestamp - this.lastAnimationTime > this.animationSpeed) {
             const computed = this.gameEngine.computeSingleGeneration();
 
             if (computed) {
-                // Update display range to show the growing timeline
                 const maxGen = this.gameEngine.getGenerationCount() - 1;
                 this.displayEnd = Math.min(this.displayEnd, maxGen);
                 this.displayStart = Math.min(this.displayStart, this.displayEnd);
@@ -419,14 +414,11 @@ export class UIControls {
                 this.timelineScrubber?.setTotalGenerations(this.gameEngine.getGenerationCount());
                 this.timelineScrubber?.setEndGeneration(this.getDisplayEnd());
             } else {
-                // Reached max generations, stop playing
                 this.stopAnimation();
             }
 
-            this.lastAnimationTime = now;
+            this.lastAnimationTime = timestamp;
         }
-
-        requestAnimationFrame(() => this.animate());
     }
 
 
@@ -850,5 +842,10 @@ export class UIControls {
             toast.classList.add('fade-out');
             setTimeout(() => toast.remove(), 300);
         }, 2000);
+    }
+
+    dispose(): void {
+        this.isPlaying = false;
+        this.timelineScrubber?.destroy();
     }
 }

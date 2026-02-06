@@ -20,6 +20,17 @@ export class CameraController {
     private moveSpeed = 0.5;
     private orbitSpeed = 0.02;
 
+    // Pooled math objects to avoid per-frame allocations
+    private _cameraDir = new THREE.Vector3();
+    private _right = new THREE.Vector3();
+    private _up = new THREE.Vector3();
+    private _forward = new THREE.Vector3();
+    private _moveVec = new THREE.Vector3();
+    private _tmpPos = new THREE.Vector3();
+    private _relPos = new THREE.Vector3();
+    private _rotMat = new THREE.Matrix4();
+    private _sphericalTmp = new THREE.Spherical();
+
     private keys = {
         w: false,
         a: false,
@@ -242,20 +253,7 @@ export class CameraController {
 
             this.updateCameraPosition();
         } else if (this.mouse.button === 1 || this.mouse.button === 2) {
-            // Middle mouse button (1) or right mouse button (2) for panning
-            const cameraDirection = new THREE.Vector3();
-            this.camera.getWorldDirection(cameraDirection);
-
-            const right = new THREE.Vector3();
-            right.crossVectors(cameraDirection, this.camera.up).normalize();
-
-            const up = new THREE.Vector3();
-            up.crossVectors(right, cameraDirection).normalize();
-
-            this.target.add(right.multiplyScalar(-deltaX * this.panSpeed * 0.1));
-            this.target.add(up.multiplyScalar(deltaY * this.panSpeed * 0.1));
-
-            this.updateCameraPosition();
+            this.applyPan(-deltaX * this.panSpeed * 0.1, deltaY * this.panSpeed * 0.1);
         }
 
         this.mouse.x = event.clientX;
@@ -389,20 +387,8 @@ export class CameraController {
             const panDeltaY = currentCenter.y - previousCenter.y;
 
             // Apply pan (like right mouse button drag)
-            const cameraDirection = new THREE.Vector3();
-            this.camera.getWorldDirection(cameraDirection);
-
-            const right = new THREE.Vector3();
-            right.crossVectors(cameraDirection, this.camera.up).normalize();
-
-            const up = new THREE.Vector3();
-            up.crossVectors(right, cameraDirection).normalize();
-
             const touchPanSpeed = this.panSpeed * 0.15;
-            this.target.add(right.multiplyScalar(-panDeltaX * touchPanSpeed));
-            this.target.add(up.multiplyScalar(panDeltaY * touchPanSpeed));
-
-            this.updateCameraPosition();
+            this.applyPan(-panDeltaX * touchPanSpeed, panDeltaY * touchPanSpeed);
 
             // Update touch positions
             this.touch.touch1.x = touches[0].clientX;
@@ -435,36 +421,29 @@ export class CameraController {
     update(): void {
         if (!this.isEnabled) return;
 
-        const cameraDirection = new THREE.Vector3();
-        this.camera.getWorldDirection(cameraDirection);
-
-        const right = new THREE.Vector3();
-        right.crossVectors(cameraDirection, this.camera.up).normalize();
-
-        const forward = new THREE.Vector3();
-        forward.copy(cameraDirection).normalize();
-
-        const up = new THREE.Vector3(0, 0, 1);
-
-        let moveVector = new THREE.Vector3();
+        this.camera.getWorldDirection(this._cameraDir);
+        this._right.crossVectors(this._cameraDir, this.camera.up).normalize();
+        this._forward.copy(this._cameraDir).normalize();
+        this._up.set(0, 0, 1);
+        this._moveVec.set(0, 0, 0);
 
         if (this.keys.w || this.keys.arrowUp) {
-            moveVector.add(forward);
+            this._moveVec.add(this._forward);
         }
         if (this.keys.s || this.keys.arrowDown) {
-            moveVector.sub(forward);
+            this._moveVec.sub(this._forward);
         }
         if (this.keys.a || this.keys.arrowLeft) {
-            moveVector.sub(right);
+            this._moveVec.sub(this._right);
         }
         if (this.keys.d || this.keys.arrowRight) {
-            moveVector.add(right);
+            this._moveVec.add(this._right);
         }
         if (this.keys.r) {
-            moveVector.add(up);
+            this._moveVec.add(this._up);
         }
         if (this.keys.f) {
-            moveVector.sub(up);
+            this._moveVec.sub(this._up);
         }
 
         if (this.keys.q) {
@@ -484,47 +463,49 @@ export class CameraController {
             this.orbitAroundZ(this.orbitSpeed);
         }
 
-        if (moveVector.length() > 0) {
-            moveVector.normalize().multiplyScalar(this.moveSpeed);
-            this.target.add(moveVector);
+        if (this._moveVec.length() > 0) {
+            this._moveVec.normalize().multiplyScalar(this.moveSpeed);
+            this.target.add(this._moveVec);
             this.updateCameraPosition();
         }
     }
 
-    private updateCameraPosition(): void {
-        const position = new THREE.Vector3();
-        position.setFromSpherical(this.spherical);
-        position.add(this.target);
+    private applyPan(rightAmount: number, upAmount: number): void {
+        this.camera.getWorldDirection(this._cameraDir);
+        this._right.crossVectors(this._cameraDir, this.camera.up).normalize();
+        this._up.crossVectors(this._right, this._cameraDir).normalize();
+        this.target.addScaledVector(this._right, rightAmount);
+        this.target.addScaledVector(this._up, upAmount);
+        this.updateCameraPosition();
+    }
 
-        this.camera.position.copy(position);
+    private updateCameraPosition(): void {
+        this._tmpPos.setFromSpherical(this.spherical);
+        this._tmpPos.add(this.target);
+
+        this.camera.position.copy(this._tmpPos);
         this.camera.lookAt(this.target);
     }
 
     private orbitAroundZ(angle: number): void {
         // Calculate current position relative to target
-        const relativePosition = new THREE.Vector3();
-        relativePosition.copy(this.camera.position).sub(this.target);
+        this._relPos.copy(this.camera.position).sub(this.target);
 
-        // Create rotation matrix around Z-axis (up-down axis)
-        // This rotates in the X-Y plane, orbiting horizontally around the vertical Z axis
-        const rotationMatrix = new THREE.Matrix4();
-        rotationMatrix.makeRotationZ(angle);
-
-        // Apply rotation to the relative position
-        relativePosition.applyMatrix4(rotationMatrix);
+        // Rotate around Z-axis (up-down axis) in the X-Y plane
+        this._rotMat.makeRotationZ(angle);
+        this._relPos.applyMatrix4(this._rotMat);
 
         // Set new camera position
-        this.camera.position.copy(this.target).add(relativePosition);
+        this.camera.position.copy(this.target).add(this._relPos);
 
         // Always look at the target (center of the model)
         this.camera.lookAt(this.target);
 
         // Update spherical coordinates to match new position
-        const sphericalPos = new THREE.Spherical();
-        sphericalPos.setFromVector3(relativePosition);
-        this.spherical.theta = sphericalPos.theta;
-        this.spherical.phi = sphericalPos.phi;
-        this.spherical.radius = sphericalPos.radius;
+        this._sphericalTmp.setFromVector3(this._relPos);
+        this.spherical.theta = this._sphericalTmp.theta;
+        this.spherical.phi = this._sphericalTmp.phi;
+        this.spherical.radius = this._sphericalTmp.radius;
     }
 
     reset(): void {
