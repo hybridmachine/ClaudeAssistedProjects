@@ -18,8 +18,8 @@ const FRESNEL_FRAGMENT_SHADER = `
         float fresnel = pow(1.0 - abs(dot(vNormal, vViewDir)), 2.5);
         vec3 rimColor = vec3(0.3, 0.5, 0.8);
         vec3 color = rimColor * fresnel;
-        float alpha = fresnel * 0.4;
-        gl_FragColor = vec4(color * 0.15, alpha);
+        float alpha = fresnel * 0.25;
+        gl_FragColor = vec4(color * 0.1, alpha);
     }
 `;
 

@@ -4,12 +4,12 @@ export class CentralElectrode {
     private mesh: THREE.Mesh;
     private light: THREE.PointLight;
     private material: THREE.MeshBasicMaterial;
-    private baseIntensity = 2.0;
+    private baseIntensity = 1.0;
 
     constructor(scene: THREE.Scene) {
         const geometry = new THREE.SphereGeometry(0.15, 16, 16);
         this.material = new THREE.MeshBasicMaterial({
-            color: new THREE.Color(4.0, 4.0, 5.0),
+            color: new THREE.Color(1.5, 1.5, 2.2),
         });
 
         this.mesh = new THREE.Mesh(geometry, this.material);
@@ -23,7 +23,7 @@ export class CentralElectrode {
         const pulse = 1.0 + 0.3 * Math.sin(time * 3.0) + 0.15 * Math.sin(time * 7.1);
         this.light.intensity = this.baseIntensity * pulse;
 
-        const brightness = 4.0 * pulse;
+        const brightness = 1.5 * pulse;
         this.material.color.setRGB(brightness, brightness, brightness * 1.2);
     }
 
