@@ -27,13 +27,13 @@ export class FilamentManager {
         this.globeRadius = globeRadius;
 
         const colors = [
-            new THREE.Color(0.5, 0.5, 1.0),  // blue-white
-            new THREE.Color(0.6, 0.4, 1.0),  // purple
-            new THREE.Color(0.4, 0.6, 1.0),  // light blue
-            new THREE.Color(0.7, 0.3, 0.9),  // violet
-            new THREE.Color(0.5, 0.5, 1.0),  // blue-white
-            new THREE.Color(0.3, 0.5, 1.0),  // deep blue
-            new THREE.Color(0.6, 0.3, 1.0),  // purple
+            new THREE.Color(0.3, 0.3, 1.0),  // electric blue
+            new THREE.Color(0.7, 0.1, 1.0),  // vivid purple
+            new THREE.Color(0.2, 0.4, 1.0),  // deep sky blue
+            new THREE.Color(0.9, 0.1, 0.8),  // hot magenta
+            new THREE.Color(0.4, 0.2, 1.0),  // indigo
+            new THREE.Color(0.1, 0.3, 1.0),  // royal blue
+            new THREE.Color(0.8, 0.1, 0.9),  // violet
         ];
 
         for (let i = 0; i < FILAMENT_COUNT; i++) {

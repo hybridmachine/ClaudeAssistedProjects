@@ -37,7 +37,7 @@ export class GlobeRenderer {
         this.composer.addPass(renderPass);
 
         const bloomResolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
-        this.bloomPass = new UnrealBloomPass(bloomResolution, 1.5, 0.4, 0.1);
+        this.bloomPass = new UnrealBloomPass(bloomResolution, 1.0, 0.3, 0.3);
         this.composer.addPass(this.bloomPass);
 
         const outputPass = new OutputPass();

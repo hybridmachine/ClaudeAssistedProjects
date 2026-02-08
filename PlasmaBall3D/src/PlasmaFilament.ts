@@ -63,7 +63,7 @@ export class PlasmaFilament {
         this.material = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: color },
-                brightness: { value: 4.0 },
+                brightness: { value: 3.0 },
             },
             vertexShader: FILAMENT_VERTEX_SHADER,
             fragmentShader: FILAMENT_FRAGMENT_SHADER,
@@ -92,7 +92,7 @@ export class PlasmaFilament {
         this.branchMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: color.clone().multiplyScalar(0.7) },
-                brightness: { value: 3.0 },
+                brightness: { value: 2.0 },
             },
             vertexShader: FILAMENT_VERTEX_SHADER,
             fragmentShader: FILAMENT_FRAGMENT_SHADER,

@@ -4,6 +4,7 @@ import { CentralElectrode } from './CentralElectrode.js';
 import { CameraController } from './CameraController.js';
 import { FilamentManager } from './FilamentManager.js';
 import { InteractionController } from './InteractionController.js';
+import { Starfield } from './Starfield.js';
 
 export class PlasmaGlobe {
     private globeRenderer: GlobeRenderer;
@@ -12,6 +13,7 @@ export class PlasmaGlobe {
     private cameraController: CameraController;
     private filamentManager: FilamentManager;
     private interactionController: InteractionController;
+    private starfield: Starfield;
     private startTime: number;
     private lastTime: number;
 
@@ -21,6 +23,7 @@ export class PlasmaGlobe {
         this.globeRenderer = new GlobeRenderer(canvas);
 
         const scene = this.globeRenderer.scene;
+        this.starfield = new Starfield(scene);
         const globeRadius = 2.0;
         this.globeMesh = new GlobeMesh(scene, globeRadius);
         this.electrode = new CentralElectrode(scene);
@@ -53,6 +56,7 @@ export class PlasmaGlobe {
         this.filamentManager.dispose();
         this.globeMesh.dispose();
         this.electrode.dispose();
+        this.starfield.dispose();
         this.globeRenderer.dispose();
     }
 }
