@@ -63,7 +63,7 @@ export class PlasmaFilament {
         this.material = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: color },
-                brightness: { value: 3.0 },
+                brightness: { value: 3.3 },
             },
             vertexShader: FILAMENT_VERTEX_SHADER,
             fragmentShader: FILAMENT_FRAGMENT_SHADER,
@@ -92,7 +92,7 @@ export class PlasmaFilament {
         this.branchMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: color.clone().multiplyScalar(0.7) },
-                brightness: { value: 2.0 },
+                brightness: { value: 2.2 },
             },
             vertexShader: FILAMENT_VERTEX_SHADER,
             fragmentShader: FILAMENT_FRAGMENT_SHADER,
@@ -140,7 +140,7 @@ export class PlasmaFilament {
 
             // Displacement: maximal at midpoint, zero at endpoints
             const envelope = Math.sin(t * Math.PI);
-            const noiseScale = 0.35;
+            const noiseScale = 0.385;
             const nx = this.noise(
                 this.seed + t * 5.0 + time * 1.5,
                 time * 0.8 + this.seed,
@@ -197,7 +197,7 @@ export class PlasmaFilament {
             this.branchPositionArray[idx + 2] = forkZ + (endZ - forkZ) * t;
 
             // Add small noise
-            const envelope = Math.sin(t * Math.PI) * 0.15;
+            const envelope = Math.sin(t * Math.PI) * 0.165;
             const n = this.noise(this.seed + 500 + t * 4.0 + time * 2.0, time * 1.5, t * 2.0);
             this.branchPositionArray[idx] += n * envelope;
             this.branchPositionArray[idx + 1] += n * envelope * 0.7;
