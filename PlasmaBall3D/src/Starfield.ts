@@ -4,34 +4,35 @@ export class Starfield {
     private stars: THREE.Points;
     private starGeometry: THREE.BufferGeometry;
     private starMaterial: THREE.PointsMaterial;
-    private galaxySprites: THREE.Sprite[] = [];
-    private galaxyTextures: THREE.CanvasTexture[] = [];
+    private galaxies: THREE.Mesh[] = [];
 
     constructor(scene: THREE.Scene) {
         // --- Stars ---
-        const starCount = 800;
-        const radius = 40;
+        const starCount = 5000;
+        const radius = 50;
 
         const positions = new Float32Array(starCount * 3);
         const colors = new Float32Array(starCount * 3);
 
         for (let i = 0; i < starCount; i++) {
-            // Uniform distribution on sphere surface
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.acos(2 * Math.random() - 1);
-            const r = radius * (0.9 + Math.random() * 0.1);
+            const i3 = i * 3;
 
-            positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-            positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-            positions[i * 3 + 2] = r * Math.cos(phi);
+            // Uniform distribution on sphere surface
+            const u = Math.random();
+            const v = Math.random();
+            const theta = 2 * Math.PI * u;
+            const phi = Math.acos(2 * v - 1);
+
+            positions[i3] = radius * Math.sin(phi) * Math.cos(theta);
+            positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+            positions[i3 + 2] = radius * Math.cos(phi);
 
             // Vary between white and blue-white, all below bloom threshold (0.3)
             const brightness = 0.1 + Math.random() * 0.15;
             const blueShift = Math.random() * 0.03;
-            colors[i * 3] = brightness - blueShift;
-            colors[i * 3 + 1] = brightness - blueShift * 0.5;
-            colors[i * 3 + 2] = brightness;
-
+            colors[i3] = brightness - blueShift;
+            colors[i3 + 1] = brightness - blueShift * 0.5;
+            colors[i3 + 2] = brightness;
         }
 
         this.starGeometry = new THREE.BufferGeometry();
@@ -39,8 +40,8 @@ export class Starfield {
         this.starGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         this.starMaterial = new THREE.PointsMaterial({
-            size: 0.08,
-            sizeAttenuation: true,
+            size: 2.0,
+            sizeAttenuation: false,
             vertexColors: true,
             depthWrite: false,
         });
@@ -49,74 +50,124 @@ export class Starfield {
         scene.add(this.stars);
 
         // --- Galaxies ---
-        // Brightness baked into tint color (no opacity property needed)
-        const galaxyConfigs = [
-            { pos: [25, 15, -20], tint: [0.08, 0.076, 0.068], scale: [18, 9], rotation: 0.4 },
-            { pos: [-20, -10, 25], tint: [0.085, 0.09, 0.1], scale: [15, 8], rotation: -0.6 },
-            { pos: [10, -25, -15], tint: [0.06, 0.053, 0.055], scale: [14, 7], rotation: 1.2 },
-            { pos: [-15, 20, 20], tint: [0.081, 0.083, 0.09], scale: [12, 6], rotation: -0.3 },
-        ];
-
-        for (const cfg of galaxyConfigs) {
-            const texture = this.createGalaxyTexture();
-            this.galaxyTextures.push(texture);
-
-            const material = new THREE.SpriteMaterial({
-                map: texture,
-                color: new THREE.Color(cfg.tint[0], cfg.tint[1], cfg.tint[2]),
-                transparent: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
-                rotation: cfg.rotation,
-            });
-
-            const sprite = new THREE.Sprite(material);
-            sprite.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
-            sprite.scale.set(cfg.scale[0], cfg.scale[1], 1);
-            scene.add(sprite);
-            this.galaxySprites.push(sprite);
-        }
+        this.createGalaxies(scene);
     }
 
-    private createGalaxyTexture(): THREE.CanvasTexture {
-        const size = 128;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d')!;
+    private createGalaxies(scene: THREE.Scene): void {
+        const galaxyCount = 15;
+        const skyRadius = 50;
 
-        // Black background — additive blending makes black invisible
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, size, size);
+        for (let i = 0; i < galaxyCount; i++) {
+            // Random position on sphere
+            const u = Math.random();
+            const v = Math.random();
+            const theta = 2 * Math.PI * u;
+            const phi = Math.acos(2 * v - 1);
 
-        // Extend gradient to corners (size * 0.71 ≈ half-diagonal)
-        const gradient = ctx.createRadialGradient(
-            size / 2, size / 2, 0,
-            size / 2, size / 2, size * 0.71,
-        );
-        gradient.addColorStop(0, '#ffffff');
-        gradient.addColorStop(0.15, '#aaaaaa');
-        gradient.addColorStop(0.35, '#444444');
-        gradient.addColorStop(0.6, '#111111');
-        gradient.addColorStop(1, '#000000');
+            const x = skyRadius * Math.sin(phi) * Math.cos(theta);
+            const y = skyRadius * Math.sin(phi) * Math.sin(theta);
+            const z = skyRadius * Math.cos(phi);
 
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, size, size);
+            // Galaxy size: 3-7 degrees of arc
+            const arcDegrees = 3 + Math.random() * 4;
+            const arcRadians = arcDegrees * Math.PI / 180;
+            const galaxySize = 2 * skyRadius * Math.tan(arcRadians / 2);
 
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        return texture;
+            // Create galaxy texture procedurally
+            const canvas = document.createElement('canvas');
+            const size = 512;
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) continue;
+
+            // Black background (additive blending makes black invisible)
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, size, size);
+
+            // Radial gradient for galaxy core
+            const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+            gradient.addColorStop(0, 'rgba(255, 255, 220, 0.9)');
+            gradient.addColorStop(0.1, 'rgba(200, 200, 255, 0.6)');
+            gradient.addColorStop(0.3, 'rgba(150, 150, 200, 0.3)');
+            gradient.addColorStop(0.6, 'rgba(100, 100, 150, 0.1)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+
+            // Add spiral arms with noise
+            const armCount = 2 + Math.floor(Math.random() * 2);
+            for (let arm = 0; arm < armCount; arm++) {
+                const armAngle = (arm / armCount) * Math.PI * 2;
+
+                for (let r = 0; r < 200; r++) {
+                    const armRadius = (r / 200) * (size / 2);
+                    const spiralTightness = 3 + Math.random() * 2;
+                    const angle = armAngle + (r / 200) * Math.PI * spiralTightness;
+
+                    const sx = size / 2 + armRadius * Math.cos(angle);
+                    const sy = size / 2 + armRadius * Math.sin(angle);
+
+                    const brightness = Math.random() * 0.3 * (1 - r / 200);
+                    const starSize = Math.random() * 3 + 1;
+
+                    ctx.fillStyle = `rgba(200, 200, 255, ${brightness})`;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, starSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Copy pixel data into DataTexture to release the canvas from memory
+            const imageData = ctx.getImageData(0, 0, size, size);
+            const texture = new THREE.DataTexture(
+                imageData.data,
+                size,
+                size,
+                THREE.RGBAFormat,
+            );
+            texture.needsUpdate = true;
+
+            // Keep galaxies dim to stay below bloom threshold
+            const galaxyMaterial = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+                opacity: 0.15,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+            });
+
+            const aspectRatio = 0.5 + Math.random() * 0.5;
+            const geometry = new THREE.PlaneGeometry(galaxySize, galaxySize * aspectRatio);
+            const galaxy = new THREE.Mesh(geometry, galaxyMaterial);
+
+            galaxy.position.set(x, y, z);
+
+            // Face center, then apply random tilt for variety
+            galaxy.lookAt(0, 0, 0);
+            const tiltX = (Math.random() - 0.5) * Math.PI;
+            const tiltY = (Math.random() - 0.5) * Math.PI;
+            galaxy.rotateX(tiltX);
+            galaxy.rotateY(tiltY);
+
+            this.galaxies.push(galaxy);
+            scene.add(galaxy);
+        }
     }
 
     dispose(): void {
         this.starGeometry.dispose();
         this.starMaterial.dispose();
 
-        for (const sprite of this.galaxySprites) {
-            (sprite.material as THREE.SpriteMaterial).dispose();
-        }
-        for (const texture of this.galaxyTextures) {
-            texture.dispose();
+        for (const galaxy of this.galaxies) {
+            galaxy.geometry.dispose();
+            const material = galaxy.material as THREE.MeshBasicMaterial;
+            if (material.map) {
+                material.map.dispose();
+            }
+            material.dispose();
         }
     }
 }
