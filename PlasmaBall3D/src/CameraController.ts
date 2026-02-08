@@ -7,7 +7,7 @@ export class CameraController {
     private target = new THREE.Vector3(0, 0, 0);
     private spherical = new THREE.Spherical(6, Math.PI / 2, 0);
     private rotateSpeed = 0.005;
-    private autoRotateSpeed = 0.1;
+    private autoRotateSpeed = 0.016;
 
     // Pooled math objects
     private _tmpPos = new THREE.Vector3();
