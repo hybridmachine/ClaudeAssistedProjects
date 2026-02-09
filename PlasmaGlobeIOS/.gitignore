@@ -25,4 +25,5 @@ Package.resolved
 *~
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/agents/
