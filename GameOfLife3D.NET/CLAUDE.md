@@ -14,7 +14,7 @@ dotnet run --project src/GameOfLife3D.NET/      # Run
 dotnet build --configuration Release            # Release build (self-contained single-file exe)
 ```
 
-No test project exists yet. RuntimeIdentifier is auto-detected per OS (`win-x64` on Windows, `linux-x64` on Linux). `AllowUnsafeBlocks` is enabled for OpenGL interop. `DpiHelper` P/Invokes `user32.dll` on Windows and falls back to 1.0 on Linux.
+No test project exists yet. RuntimeIdentifier is auto-detected per OS and architecture (`win-x64` on Windows, `linux-x64` or `linux-arm64` on Linux). `AllowUnsafeBlocks` is enabled for OpenGL interop. `DpiHelper` P/Invokes `user32.dll` on Windows and falls back to 1.0 on Linux.
 
 ## Architecture
 

@@ -4,7 +4,8 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <RuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Windows'))">win-x64</RuntimeIdentifier>
-    <RuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Linux'))">linux-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">linux-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">linux-x64</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -27,6 +28,11 @@
     <EmbeddedResource Include="Shaders\*.vert" />
     <EmbeddedResource Include="Shaders\*.frag" />
     <EmbeddedResource Include="Shaders\*.glsl" />
+  </ItemGroup>
+
+  <!-- ImGui.NET doesn't ship linux-arm64 native binary; we built cimgui from source -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'linux-arm64'">
+    <Content Include="runtimes/linux-arm64/native/libcimgui.so" CopyToOutputDirectory="PreserveNewest" Link="libcimgui.so" />
   </ItemGroup>
 
 </Project>

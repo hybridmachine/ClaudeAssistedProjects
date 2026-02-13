@@ -33,7 +33,7 @@ public sealed class App : IDisposable
         var options = WindowOptions.Default;
         options.Size = new Vector2D<int>(1600, 900);
         options.Title = "Game of Life 3D";
-        options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible, new APIVersion(3, 3));
+        options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 1));
         options.VSync = true;
 
         _window = Window.Create(options);
@@ -48,6 +48,13 @@ public sealed class App : IDisposable
     private void OnLoad()
     {
         _gl = GL.GetApi(_window!);
+
+        // Log GL capabilities for debugging (confirms Mesa override on Pi 5)
+        Console.WriteLine($"GL Vendor:   {_gl.GetStringS(StringName.Vendor)}");
+        Console.WriteLine($"GL Renderer: {_gl.GetStringS(StringName.Renderer)}");
+        Console.WriteLine($"GL Version:  {_gl.GetStringS(StringName.Version)}");
+        Console.WriteLine($"GLSL Version: {_gl.GetStringS(StringName.ShadingLanguageVersion)}");
+
         _input = _window!.CreateInput();
 
         // Detect DPI scale from framebuffer vs logical window size

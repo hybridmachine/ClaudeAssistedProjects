@@ -1,4 +1,4 @@
-#version 330 core
+#version 140
 
 in vec3 vWorldPosition;
 in float vGenerationT;
