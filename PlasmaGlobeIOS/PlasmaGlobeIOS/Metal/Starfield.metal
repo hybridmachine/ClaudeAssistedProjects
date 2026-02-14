@@ -11,7 +11,7 @@ struct Uniforms {
     float2 resolution;
     float2 touchPosition;
     float touchActive;
-    float padding;
+    float cameraDistance;
 };
 
 // Hash function for pseudo-random star placement

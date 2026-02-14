@@ -16,7 +16,7 @@ struct Uniforms {
     float2 resolution;
     float2 touchPosition;
     float touchActive;
-    float padding;
+    float cameraDistance;
 };
 
 constant int NUM_TENDRILS = 7;
@@ -98,7 +98,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
 
     // Camera — slow orbit
     float camAngle = time * 0.12;
-    float3 ro = float3(sin(camAngle) * 3.2, sin(time * 0.04) * 0.15, cos(camAngle) * 3.2);
+    float3 ro = float3(sin(camAngle) * uniforms.cameraDistance, sin(time * 0.04) * 0.15, cos(camAngle) * uniforms.cameraDistance);
     float3 ww = normalize(-ro);
     float3 uu = normalize(cross(ww, float3(0, 1, 0)));
     float3 vv = cross(uu, ww);

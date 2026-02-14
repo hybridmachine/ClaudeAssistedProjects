@@ -89,11 +89,20 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
         let time = Float(CFAbsoluteTimeGetCurrent() - startTime)
         let resolution = SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height))
 
+        // Compute default camera distance for ~70% screen width on first frame
+        if handler.cameraDistance <= 0 {
+            let aspect = resolution.x / resolution.y
+            let fov: Float = 1.6
+            let targetHalf: Float = 0.35 * aspect // half of 70% screen width in UV
+            handler.cameraDistance = sqrt((fov / targetHalf) * (fov / targetHalf) + 1.0)
+        }
+
         var uniforms = Uniforms(
             time: time,
             resolution: resolution,
             touchPosition: handler.touchPosition,
-            touchActive: handler.isTouching ? 1.0 : 0.0
+            touchActive: handler.isTouching ? 1.0 : 0.0,
+            cameraDistance: handler.cameraDistance
         )
 
         // Pass 1: Starfield

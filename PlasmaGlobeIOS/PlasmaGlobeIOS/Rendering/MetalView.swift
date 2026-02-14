@@ -29,6 +29,12 @@ struct MetalView: UIViewRepresentable {
         tapGesture.minimumPressDuration = 0
         mtkView.addGestureRecognizer(tapGesture)
 
+        let pinchGesture = UIPinchGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePinch(_:))
+        )
+        mtkView.addGestureRecognizer(pinchGesture)
+
         return mtkView
     }
 
@@ -84,6 +90,17 @@ struct MetalView: UIViewRepresentable {
                 touchHandler.updateTouch(location: location, viewSize: view.bounds.size)
             case .ended, .cancelled, .failed:
                 touchHandler.endTouch()
+            default:
+                break
+            }
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                touchHandler.beginPinch()
+            case .changed:
+                touchHandler.updatePinch(scale: gesture.scale)
             default:
                 break
             }
