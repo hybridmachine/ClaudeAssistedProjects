@@ -12,6 +12,7 @@ struct Uniforms {
     float2 touchPosition;
     float touchActive;
     float cameraDistance;
+    float cameraTime;
 };
 
 // Hash function for pseudo-random star placement
@@ -93,8 +94,8 @@ fragment float4 starfieldFragment(VertexOut in [[stage_in]],
     float aspect = uniforms.resolution.x / uniforms.resolution.y;
     uv.x *= aspect;
 
-    // Slow drift
-    float driftTime = uniforms.time * 0.008;
+    // Slow drift (freezes with camera during touch)
+    float driftTime = uniforms.cameraTime * 0.008;
     uv += float2(driftTime, driftTime * 0.7);
 
     float3 color = float3(0.005, 0.005, 0.015);

@@ -17,6 +17,7 @@ struct Uniforms {
     float2 touchPosition;
     float touchActive;
     float cameraDistance;
+    float cameraTime;
 };
 
 constant int NUM_TENDRILS = 7;
@@ -54,6 +55,7 @@ struct TendrilInfo {
     float3 dir;
     float3 right;
     float3 fwd;
+    float touchBias;   // 0 when not touching; proximity-based when touching
 };
 
 static TendrilInfo computeTendril(int idx, float time, float3 touchDir, float touchActive) {
@@ -71,8 +73,16 @@ static TendrilInfo computeTendril(int idx, float time, float3 touchDir, float to
         sin(phi) * sin(theta)
     ));
 
+    float bias = 0.0;
     if (touchActive > 0.5) {
-        float bias = 0.35 + 0.25 * fract(fi * 0.37);
+        // Angular distance: 0 = same direction, 1 = opposite
+        float angularDist = acos(clamp(dot(baseDir, touchDir), -1.0, 1.0)) / M_PI_F;
+        float proximity = 1.0 - angularDist;
+        float attraction = pow(proximity, 0.6);
+
+        // Close tendrils: ~92% bias; far tendrils: ~5%
+        bias = mix(0.05, 0.92, attraction) + 0.08 * fract(fi * 0.37);
+        bias = clamp(bias, 0.0, 1.0);
         baseDir = normalize(mix(baseDir, touchDir, bias));
     }
 
@@ -84,6 +94,7 @@ static TendrilInfo computeTendril(int idx, float time, float3 touchDir, float to
     info.dir = baseDir;
     info.right = rt;
     info.fwd = fw;
+    info.touchBias = bias;
     return info;
 }
 
@@ -96,9 +107,9 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
     float2 uv = (in.uv * uniforms.resolution - 0.5 * uniforms.resolution) / uniforms.resolution.y;
     float time = uniforms.time;
 
-    // Camera — slow orbit
-    float camAngle = time * 0.12;
-    float3 ro = float3(sin(camAngle) * uniforms.cameraDistance, sin(time * 0.04) * 0.15, cos(camAngle) * uniforms.cameraDistance);
+    // Camera — slow orbit (freezes during touch)
+    float camAngle = uniforms.cameraTime * 0.12;
+    float3 ro = float3(sin(camAngle) * uniforms.cameraDistance, sin(uniforms.cameraTime * 0.04) * 0.15, cos(camAngle) * uniforms.cameraDistance);
     float3 ww = normalize(-ro);
     float3 uu = normalize(cross(ww, float3(0, 1, 0)));
     float3 vv = cross(uu, ww);
@@ -107,7 +118,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
     // Map touch to world-space direction on sphere
     float3 touchDir = float3(0, 0, 1);
     if (uniforms.touchActive > 0.5) {
-        float2 tuv = (uniforms.touchPosition - 0.5) * 2.0;
+        float2 tuv = uniforms.touchPosition - 0.5;
         tuv.x *= uniforms.resolution.x / uniforms.resolution.y;
         float3 touchRd = normalize(tuv.x * uu - tuv.y * vv + 1.6 * ww);
         float2 tHit = sphereHit(ro, touchRd, SPHERE_R);
@@ -190,9 +201,10 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 half core = half(exp(-dist * dist / (coreW * coreW)));
                 half glow = half(fast::exp(-dist * dist / (glowW * glowW)));
 
-                // Fade near center and surface
+                // Fade near center and surface — attracted tendrils reach the glass
+                float surfaceMargin = mix(0.05, 0.005, tendrils[j].touchBias);
                 half fade = half(smoothstep(CORE_R, CORE_R + 0.12, along) *
-                             smoothstep(SPHERE_R, SPHERE_R - 0.05, along));
+                             smoothstep(SPHERE_R, SPHERE_R - surfaceMargin, along));
 
                 totalCore += core * fade;
                 totalGlow += glow * fade;
@@ -215,6 +227,16 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
 
             // Early exit: values above ~3.0 per channel saturate after tone mapping
             if (dot(plasma, plasma) > 9.0h) break;
+        }
+
+        // === Touch contact glow ===
+        if (uniforms.touchActive > 0.5) {
+            float surfaceDot = dot(normal, touchDir);
+            float contactGlow = pow(max(surfaceDot, 0.0), 80.0) * 2.5;
+            float contactHalo = pow(max(surfaceDot, 0.0), 15.0) * 0.4;
+            float3 contactColor = float3(0.9, 0.9, 1.0) * contactGlow
+                                + float3(0.4, 0.3, 0.8) * contactHalo;
+            plasma += half3(contactColor);
         }
 
         color = float3(plasma) + shellColor;
