@@ -35,9 +35,9 @@ static float starLayer(float2 uv, float scale, float time, float seed) {
 
     float brightness = 0.0;
 
-    // Check 3x3 neighborhood for smooth stars
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
+    // Check 2x2 neighborhood for stars
+    for (int y = 0; y <= 1; y++) {
+        for (int x = 0; x <= 1; x++) {
             float2 offset = float2(x, y);
             float2 cellId = id + offset;
 
@@ -50,8 +50,8 @@ static float starLayer(float2 uv, float scale, float time, float seed) {
             float twinkle = sin(time * (1.5 + n * 3.0) + n * 6.28) * 0.3 + 0.7;
             float star = smoothstep(0.05, 0.0, dist) * n * twinkle;
 
-            // Only show brighter stars (threshold controls density)
-            star *= step(0.6, n);
+            // Only show brighter stars (threshold controls density, lowered for 2x2 neighborhood)
+            star *= step(0.45, n);
 
             brightness += star;
         }

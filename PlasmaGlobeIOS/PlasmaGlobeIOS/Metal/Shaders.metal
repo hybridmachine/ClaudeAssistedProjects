@@ -139,18 +139,19 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
         shellColor += float3(0.2, 0.22, 0.3) * spec * 0.25;
 
         // === Volumetric plasma tendrils ===
-        float3 plasma = float3(0.0);
-        float dt = pathLen / float(VOL_STEPS);
+        half3 plasma = half3(0.0h);
+        int stepCount = int(clamp(pathLen * 18.0, 12.0, float(VOL_STEPS)));
+        float dt = pathLen / float(stepCount);
 
-        for (int i = 0; i < VOL_STEPS; i++) {
+        for (int i = 0; i < stepCount; i++) {
             float rayT = hit.x + dt * (float(i) + 0.5);
             float3 pos = ro + rd * rayT;
             float r = length(pos);
 
             if (r < CORE_R * 0.5 || r > SPHERE_R) continue;
 
-            float totalCore = 0.0;
-            float totalGlow = 0.0;
+            half totalCore = 0.0h;
+            half totalGlow = 0.0h;
 
             for (int j = 0; j < NUM_TENDRILS; j++) {
                 float fj = float(j);
@@ -172,11 +173,13 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 float dispAmt = max(along, 0.0) * 0.3;
                 float3 noiseDisp = (tRight * nx1 + tFwd * ny1) * dispAmt;
 
-                // Second octave — fine lightning jitter
-                float3 np2 = float3(along * 7.0, fj * 23.1 + time * 0.5, fj * 17.3);
-                float nx2 = tnoise(np2, noiseTex, smp) - 0.5;
-                float ny2 = tnoise(np2 + float3(197, 0, 0), noiseTex, smp) - 0.5;
-                noiseDisp += (tRight * nx2 + tFwd * ny2) * dispAmt * 0.3;
+                // Second octave — fine lightning jitter (skip near center where displacement is ~0)
+                if (along > 0.15) {
+                    float3 np2 = float3(along * 7.0, fj * 23.1 + time * 0.5, fj * 17.3);
+                    float nx2 = tnoise(np2, noiseTex, smp) - 0.5;
+                    float ny2 = tnoise(np2 + float3(197, 0, 0), noiseTex, smp) - 0.5;
+                    noiseDisp += (tRight * nx2 + tFwd * ny2) * dispAmt * 0.3;
+                }
 
                 // 3D distance from sample to displaced tendril
                 float dist = length(perp - noiseDisp);
@@ -184,34 +187,37 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 // Tendril profile — Gaussian in 3D distance
                 float coreW = 0.018 + along * 0.008;
                 float glowW = 0.06 + along * 0.04;
-                float core = exp(-dist * dist / (coreW * coreW));
-                float glow = exp(-dist * dist / (glowW * glowW));
+                half core = half(exp(-dist * dist / (coreW * coreW)));
+                half glow = half(fast::exp(-dist * dist / (glowW * glowW)));
 
                 // Fade near center and surface
-                float fade = smoothstep(CORE_R, CORE_R + 0.12, along) *
-                             smoothstep(SPHERE_R, SPHERE_R - 0.05, along);
+                half fade = half(smoothstep(CORE_R, CORE_R + 0.12, along) *
+                             smoothstep(SPHERE_R, SPHERE_R - 0.05, along));
 
                 totalCore += core * fade;
                 totalGlow += glow * fade;
             }
 
-            totalCore = min(totalCore, 5.0);
-            totalGlow = min(totalGlow, 8.0);
+            totalCore = min(totalCore, 5.0h);
+            totalGlow = min(totalGlow, 8.0h);
 
             // Color: white/blue core, purple/pink glow
-            float3 stepCol = float3(0.0);
-            stepCol += float3(0.95, 0.95, 1.0) * totalCore * 1.5;
-            stepCol += float3(0.5, 0.3, 0.9) * totalGlow * 0.35;
-            stepCol += float3(0.8, 0.2, 0.6) * totalGlow * totalGlow * 0.008;
+            half3 stepCol = half3(0.0h);
+            stepCol += half3(0.95h, 0.95h, 1.0h) * totalCore * 1.5h;
+            stepCol += half3(0.5h, 0.3h, 0.9h) * totalGlow * 0.35h;
+            stepCol += half3(0.8h, 0.2h, 0.6h) * totalGlow * totalGlow * 0.008h;
 
             // Central electrode glow
-            float cg = exp(-r * 12.0) * 3.0;
-            stepCol += float3(0.6, 0.7, 1.0) * cg;
+            half cg = half(fast::exp(-r * 12.0)) * 3.0h;
+            stepCol += half3(0.6h, 0.7h, 1.0h) * cg;
 
-            plasma += stepCol * dt;
+            plasma += stepCol * half(dt);
+
+            // Early exit: values above ~3.0 per channel saturate after tone mapping
+            if (dot(plasma, plasma) > 9.0h) break;
         }
 
-        color = plasma + shellColor;
+        color = float3(plasma) + shellColor;
 
         // Rim glow on glass edge
         float rim = pow(1.0 - abs(dot(rd, normal)), 4.0);
@@ -223,7 +229,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
     color *= 0.5 + 0.5 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), 0.15);
 
     // Tone mapping
-    color = 1.0 - exp(-color * 2.5);
+    color = 1.0 - fast::exp(-color * 2.5);
 
     return float4(max(color, float3(0.0)), 1.0);
 }
