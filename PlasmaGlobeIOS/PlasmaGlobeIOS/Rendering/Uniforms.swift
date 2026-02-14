@@ -6,4 +6,5 @@ struct Uniforms {
     var touchPosition: SIMD2<Float>
     var touchActive: Float
     var cameraDistance: Float = 5.0
+    var cameraTime: Float = 0.0
 }

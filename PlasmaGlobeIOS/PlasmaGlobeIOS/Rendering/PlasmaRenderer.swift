@@ -8,6 +8,8 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
     private let noiseTexture: MTLTexture
     private let startTime: CFAbsoluteTime
     private weak var touchHandler: TouchHandler?
+    private var cameraTime: Float = 0
+    private var lastFrameTime: CFAbsoluteTime?
 
     init?(mtkView: MTKView, touchHandler: TouchHandler) {
         guard let device = mtkView.device,
@@ -86,8 +88,15 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
               let descriptor = view.currentRenderPassDescriptor,
               let commandBuffer = commandQueue.makeCommandBuffer() else { return }
 
-        let time = Float(CFAbsoluteTimeGetCurrent() - startTime)
+        let now = CFAbsoluteTimeGetCurrent()
+        let time = Float(now - startTime)
         let resolution = SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height))
+
+        // Advance camera orbit only when not touching
+        if let last = lastFrameTime, !handler.isTouching {
+            cameraTime += Float(now - last)
+        }
+        lastFrameTime = now
 
         // Compute default camera distance for ~70% screen width on first frame
         if handler.cameraDistance <= 0 {
@@ -102,7 +111,8 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
             resolution: resolution,
             touchPosition: handler.touchPosition,
             touchActive: handler.isTouching ? 1.0 : 0.0,
-            cameraDistance: handler.cameraDistance
+            cameraDistance: handler.cameraDistance,
+            cameraTime: cameraTime
         )
 
         // Pass 1: Starfield
