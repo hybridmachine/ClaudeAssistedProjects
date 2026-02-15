@@ -25,9 +25,10 @@ constant int NUM_TENDRILS = 12;
 constant int VOL_STEPS = 28;
 constant float SPHERE_R = 1.0;
 constant float CORE_R = 0.06;
-constant float POST_RADIUS = 0.035;
+constant float POST_RADIUS_MAX = 0.095;
 constant float POST_BOTTOM = -SPHERE_R;
 constant float POST_TOP = 0.0;
+constant float ELECTRODE_R = 0.095;       // radius of the rounded electrode ball at top of post
 constant float QUICK_REJECT_DIST = 0.25;
 
 // --- Smooth 3D noise from 2D texture ---
@@ -54,72 +55,163 @@ static float2 sphereHit(float3 ro, float3 rd, float r) {
     return float2(-b - h, -b + h);
 }
 
-// --- Ray-cylinder intersection (Y-axis aligned, with caps) ---
-// Returns (tNear, tFar) or (-1, -1) if no hit.
-// Cylinder centered on Y axis with given radius, from yMin to yMax.
+// --- Profiled center post (tapered/lathe-turned shape via SDF) ---
 
-struct CylinderResult {
+struct PostResult {
     float t;          // hit distance along ray (-1 if miss)
     float3 normal;    // surface normal at hit point
 };
 
-static CylinderResult cylinderHit(float3 ro, float3 rd, float radius, float yMin, float yMax) {
-    CylinderResult result;
+// Profile function: returns radius of post as a function of Y position.
+// Bottom (y=POST_BOTTOM) is a wide rounded base, top (y=POST_TOP) is a narrow stem.
+static float postRadius(float y) {
+    // Normalize y: 0 = bottom, 1 = top
+    float t = (y - POST_BOTTOM) / (POST_TOP - POST_BOTTOM);
+    t = clamp(t, 0.0, 1.0);
+
+    // Bottom dome/base region (t=0..0.3): wide rounded base
+    float baseR = 0.08;
+    // Subtle dome bulge near the very bottom
+    float dome = 1.0 + 0.15 * smoothstep(0.15, 0.0, t);
+    float bottom = baseR * dome;
+
+    // Middle taper region (t=0.3..0.8): gentle taper from ~0.045 to ~0.028
+    float midTop = 0.028;
+    float midBot = 0.045;
+    float midT = smoothstep(0.3, 0.8, t);
+    float middle = mix(midBot, midTop, midT);
+
+    // Top stem region (t=0.8..1.0): narrow stem with slight flare at electrode
+    float stemR = 0.028;
+    float flare = 1.0 + 0.08 * smoothstep(0.9, 1.0, t);
+    float top = stemR * flare;
+
+    // Blend regions together smoothly
+    float blend1 = smoothstep(0.2, 0.35, t);  // bottom -> middle
+    float blend2 = smoothstep(0.7, 0.85, t);  // middle -> top
+    float r = mix(bottom, middle, blend1);
+    r = mix(r, top, blend2);
+
+    return r;
+}
+
+// Signed distance function for the profiled post + electrode sphere.
+// Negative = inside, positive = outside.
+// Union of the tapered post body and a sphere at the top (electrode ball).
+static float postSDF(float3 p) {
+    // --- Tapered post body (surface of revolution) ---
+    float radialDist = length(float2(p.x, p.z));
+    float y = p.y;
+
+    float yc = clamp(y, POST_BOTTOM, POST_TOP);
+    float profileR = postRadius(yc);
+    float dRadial = radialDist - profileR;
+
+    float dVertical = 0.0;
+    if (y < POST_BOTTOM) dVertical = POST_BOTTOM - y;
+    else if (y > POST_TOP) dVertical = y - POST_TOP;
+
+    float dPost;
+    if (dVertical > 0.0) {
+        if (dRadial > 0.0) {
+            dPost = sqrt(dRadial * dRadial + dVertical * dVertical);
+        } else {
+            dPost = dVertical;
+        }
+    } else {
+        dPost = dRadial;
+    }
+
+    // --- Electrode sphere at top of post ---
+    float dSphere = length(p - float3(0.0, POST_TOP, 0.0)) - ELECTRODE_R;
+
+    // Union: take the closer (minimum) surface
+    return min(dPost, dSphere);
+}
+
+// Ray vs profiled post + electrode sphere intersection.
+// Uses hybrid analytical bounding + SDF sphere-tracing.
+static PostResult profiledPostHit(float3 ro, float3 rd) {
+    PostResult result;
     result.t = -1.0;
     result.normal = float3(0.0);
 
-    // Solve ray vs infinite cylinder on Y axis: (ox + t*dx)^2 + (oz + t*dz)^2 = r^2
-    float a = rd.x * rd.x + rd.z * rd.z;
-    float b = 2.0 * (ro.x * rd.x + ro.z * rd.z);
-    float c = ro.x * ro.x + ro.z * ro.z - radius * radius;
-    float disc = b * b - 4.0 * a * c;
+    // Compute bounding intervals for two regions:
+    // 1) Bounding cylinder (POST_RADIUS_MAX) clamped to Y range for the tapered post
+    // 2) Bounding sphere (ELECTRODE_R) for the electrode ball at top
 
-    float tMin = 1e20;
+    float tEntry = 1e20;
+    float tExit = -1e20;
 
-    if (disc >= 0.0 && a > 1e-8) {
-        float sqrtDisc = sqrt(disc);
-        float t0 = (-b - sqrtDisc) / (2.0 * a);
-        float t1 = (-b + sqrtDisc) / (2.0 * a);
+    // --- Bounding cylinder for tapered post body ---
+    float cylA = rd.x * rd.x + rd.z * rd.z;
+    float cylB = 2.0 * (ro.x * rd.x + ro.z * rd.z);
+    float cylC = ro.x * ro.x + ro.z * ro.z - POST_RADIUS_MAX * POST_RADIUS_MAX;
+    float cylDisc = cylB * cylB - 4.0 * cylA * cylC;
 
-        // Check cylinder body hits (clamp to yMin..yMax)
-        for (int i = 0; i < 2; i++) {
-            float t = (i == 0) ? t0 : t1;
-            if (t > 0.001) {
-                float y = ro.y + rd.y * t;
-                if (y >= yMin && y <= yMax && t < tMin) {
-                    tMin = t;
-                    float3 hp = ro + rd * t;
-                    result.normal = normalize(float3(hp.x, 0.0, hp.z));
-                }
-            }
+    if (cylDisc >= 0.0 && cylA > 1e-8) {
+        float sqrtDisc = sqrt(cylDisc);
+        float cEntry = (-cylB - sqrtDisc) / (2.0 * cylA);
+        float cExit  = (-cylB + sqrtDisc) / (2.0 * cylA);
+
+        // Clamp to Y range
+        if (abs(rd.y) > 1e-8) {
+            float tBot = (POST_BOTTOM - ro.y) / rd.y;
+            float tTop = (POST_TOP - ro.y) / rd.y;
+            cEntry = max(cEntry, min(tBot, tTop));
+            cExit  = min(cExit,  max(tBot, tTop));
+        } else if (ro.y < POST_BOTTOM || ro.y > POST_TOP) {
+            cEntry = 1e20; cExit = -1e20; // invalidate
+        }
+
+        if (cEntry < cExit) {
+            tEntry = min(tEntry, cEntry);
+            tExit  = max(tExit,  cExit);
         }
     }
 
-    // Check top cap (y = yMax)
-    if (abs(rd.y) > 1e-8) {
-        float tTop = (yMax - ro.y) / rd.y;
-        if (tTop > 0.001 && tTop < tMin) {
-            float3 hp = ro + rd * tTop;
-            if (hp.x * hp.x + hp.z * hp.z <= radius * radius) {
-                tMin = tTop;
-                result.normal = float3(0.0, 1.0, 0.0);
-            }
-        }
+    // --- Bounding sphere for electrode ball ---
+    float3 sphereCenter = float3(0.0, POST_TOP, 0.0);
+    float3 oc = ro - sphereCenter;
+    float sB = dot(oc, rd);
+    float sC = dot(oc, oc) - ELECTRODE_R * ELECTRODE_R;
+    float sDisc = sB * sB - sC;
 
-        // Check bottom cap (y = yMin)
-        float tBot = (yMin - ro.y) / rd.y;
-        if (tBot > 0.001 && tBot < tMin) {
-            float3 hp = ro + rd * tBot;
-            if (hp.x * hp.x + hp.z * hp.z <= radius * radius) {
-                tMin = tBot;
-                result.normal = float3(0.0, -1.0, 0.0);
-            }
+    if (sDisc >= 0.0) {
+        float sqrtSD = sqrt(sDisc);
+        float sEntry = -sB - sqrtSD;
+        float sExit  = -sB + sqrtSD;
+        if (sExit > 0.001) {
+            tEntry = min(tEntry, sEntry);
+            tExit  = max(tExit,  sExit);
         }
     }
 
-    if (tMin < 1e19) {
-        result.t = tMin;
+    tEntry = max(tEntry, 0.001);
+    if (tEntry >= tExit) return result; // no valid interval
+
+    // SDF sphere-tracing within the combined bounded interval
+    float t = tEntry;
+    for (int i = 0; i < 16; i++) {
+        float3 p = ro + rd * t;
+        float d = postSDF(p);
+        if (d < 0.001) {
+            result.t = t;
+
+            // Normal via central-difference gradient of SDF
+            float eps = 0.001;
+            float3 n = float3(
+                postSDF(p + float3(eps, 0, 0)) - postSDF(p - float3(eps, 0, 0)),
+                postSDF(p + float3(0, eps, 0)) - postSDF(p - float3(0, eps, 0)),
+                postSDF(p + float3(0, 0, eps)) - postSDF(p - float3(0, 0, eps))
+            );
+            result.normal = normalize(n);
+            return result;
+        }
+        t += max(d * 0.9, 0.002);
+        if (t > tExit) break;
     }
+
     return result;
 }
 
@@ -235,8 +327,8 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
         float pathLen = hit.y - hit.x;
         float3 normal = normalize(entry);
 
-        // === Center post (ray-cylinder test) ===
-        CylinderResult postHit = cylinderHit(ro, rd, POST_RADIUS, POST_BOTTOM, POST_TOP);
+        // === Center post (profiled SDF intersection) ===
+        PostResult postHit = profiledPostHit(ro, rd);
         bool hitPost = (postHit.t > 0.0 && postHit.t >= hit.x && postHit.t <= hit.y);
         float3 postColor = float3(0.0);
 
@@ -290,9 +382,8 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
 
             if (r < CORE_R * 0.5 || r > SPHERE_R) continue;
 
-            // Skip samples inside the post cylinder
-            float postDist2D = pos.x * pos.x + pos.z * pos.z;
-            if (postDist2D < POST_RADIUS * POST_RADIUS && pos.y < POST_TOP && pos.y > POST_BOTTOM) continue;
+            // Skip samples inside the profiled post
+            if (postSDF(pos) < 0.0) continue;
 
             half totalCore = 0.0h;
             half totalGlow = 0.0h;

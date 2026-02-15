@@ -58,7 +58,7 @@ Uniforms passed each frame: `time`, `resolution`, `touchPosition`, `isTouching`.
 - `VOL_STEPS = 28` — ray-march sample count
 - `SPHERE_R = 1.0` — globe radius
 - `CORE_R = 0.06` — central electrode radius
-- `POST_RADIUS = 0.035` — center post cylinder radius
+- `POST_RADIUS_MAX = 0.095` — center post bounding cylinder radius (actual profile varies via `postRadius(y)`)
 - `QUICK_REJECT_DIST = 0.25` — perpendicular distance threshold for tendril skip
 
 ## Build & Run
