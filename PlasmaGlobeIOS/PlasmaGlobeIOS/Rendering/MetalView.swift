@@ -3,6 +3,8 @@ import MetalKit
 
 struct MetalView: UIViewRepresentable {
     @ObservedObject var touchHandler: TouchHandler
+    @ObservedObject var settings: PlasmaSettings
+    var motionManager: MotionManager?
 
     func makeUIView(context: Context) -> MTKView {
         let mtkView = MTKView()
@@ -14,50 +16,67 @@ struct MetalView: UIViewRepresentable {
         mtkView.delegate = context.coordinator
         mtkView.isMultipleTouchEnabled = true
 
-        let panGesture = UIPanGestureRecognizer(
+        let multiTouch = MultiTouchGestureRecognizer(
             target: context.coordinator,
-            action: #selector(Coordinator.handlePan(_:))
+            action: #selector(Coordinator.handleMultiTouch(_:))
         )
-        panGesture.minimumNumberOfTouches = 1
-        panGesture.maximumNumberOfTouches = 1
-        mtkView.addGestureRecognizer(panGesture)
-
-        let tapGesture = UILongPressGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handleLongPress(_:))
-        )
-        tapGesture.minimumPressDuration = 0
-        mtkView.addGestureRecognizer(tapGesture)
 
         let pinchGesture = UIPinchGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handlePinch(_:))
         )
+
+        multiTouch.setPinchRecognizer(pinchGesture)
+
+        let doubleTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDoubleTap(_:))
+        )
+        doubleTap.numberOfTapsRequired = 2
+
+        mtkView.addGestureRecognizer(multiTouch)
         mtkView.addGestureRecognizer(pinchGesture)
+        mtkView.addGestureRecognizer(doubleTap)
+
+        pinchGesture.delegate = context.coordinator
+        multiTouch.delegate = context.coordinator
 
         return mtkView
     }
 
     func updateUIView(_ uiView: MTKView, context: Context) {
         uiView.isPaused = !touchHandler.isActive
+        context.coordinator.updateSettings(settings)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(touchHandler: touchHandler)
+        Coordinator(touchHandler: touchHandler, settings: settings, motionManager: motionManager)
     }
 
-    final class Coordinator: NSObject, MTKViewDelegate {
+    final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate {
         private var renderer: PlasmaRenderer?
         private let touchHandler: TouchHandler
+        private var settings: PlasmaSettings
+        private var motionManager: MotionManager?
 
-        init(touchHandler: TouchHandler) {
+        init(touchHandler: TouchHandler, settings: PlasmaSettings, motionManager: MotionManager?) {
             self.touchHandler = touchHandler
+            self.settings = settings
+            self.motionManager = motionManager
             super.init()
+        }
+
+        func updateSettings(_ settings: PlasmaSettings) {
+            self.settings = settings
+            renderer?.plasmaConfig = settings.buildPlasmaConfig()
+            touchHandler.hapticsEnabled = settings.hapticsEnabled
         }
 
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
             if renderer == nil {
                 renderer = PlasmaRenderer(mtkView: view, touchHandler: touchHandler)
+                renderer?.plasmaConfig = settings.buildPlasmaConfig()
+                renderer?.motionManager = motionManager
             }
             renderer?.mtkView(view, drawableSizeWillChange: size)
         }
@@ -65,31 +84,20 @@ struct MetalView: UIViewRepresentable {
         func draw(in view: MTKView) {
             if renderer == nil {
                 renderer = PlasmaRenderer(mtkView: view, touchHandler: touchHandler)
+                renderer?.plasmaConfig = settings.buildPlasmaConfig()
+                renderer?.motionManager = motionManager
             }
             renderer?.draw(in: view)
         }
 
-        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+        @objc func handleMultiTouch(_ gesture: MultiTouchGestureRecognizer) {
             guard let view = gesture.view else { return }
-            let location = gesture.location(in: view)
             switch gesture.state {
             case .began, .changed:
-                touchHandler.updateTouch(location: location, viewSize: view.bounds.size)
+                let slots = gesture.activeTouchData(in: view)
+                touchHandler.updateTouches(slots)
             case .ended, .cancelled, .failed:
-                touchHandler.endTouch()
-            default:
-                break
-            }
-        }
-
-        @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-            guard let view = gesture.view else { return }
-            let location = gesture.location(in: view)
-            switch gesture.state {
-            case .began, .changed:
-                touchHandler.updateTouch(location: location, viewSize: view.bounds.size)
-            case .ended, .cancelled, .failed:
-                touchHandler.endTouch()
+                touchHandler.endAllTouches()
             default:
                 break
             }
@@ -104,6 +112,15 @@ struct MetalView: UIViewRepresentable {
             default:
                 break
             }
+        }
+
+        @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            touchHandler.triggerDischarge()
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            return true
         }
     }
 }

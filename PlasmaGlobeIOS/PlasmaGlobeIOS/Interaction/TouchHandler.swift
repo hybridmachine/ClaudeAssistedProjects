@@ -2,15 +2,25 @@ import UIKit
 import Combine
 
 final class TouchHandler: ObservableObject {
-    @Published var touchPosition: SIMD2<Float> = .init(0.5, 0.5)
-    @Published var isTouching: Bool = false
+    @Published var touchSlots: [TouchSlot] = []
     @Published var isActive: Bool = true
-    @Published var cameraDistance: Float = 0.0 // 0 = compute default on first frame
+    @Published var cameraDistance: Float = 0.0
+    @Published var dischargeTriggered: Bool = false
 
     static let minDistance: Float = 1.5
     static let maxDistance: Float = 20.0
 
     private var pinchStartDistance: Float = 0.0
+
+    let hapticManager = HapticManager()
+    var audioManager: AudioManager?
+    var hapticsEnabled: Bool = true
+
+    var isTouching: Bool { !touchSlots.isEmpty }
+
+    var maxForce: Float {
+        touchSlots.map(\.force).max() ?? 0.0
+    }
 
     func beginPinch() {
         pinchStartDistance = cameraDistance
@@ -21,14 +31,37 @@ final class TouchHandler: ObservableObject {
         cameraDistance = min(max(newDistance, Self.minDistance), Self.maxDistance)
     }
 
-    func updateTouch(location: CGPoint, viewSize: CGSize) {
-        let x = Float(location.x / viewSize.width)
-        let y = Float(location.y / viewSize.height)
-        touchPosition = SIMD2<Float>(x, y)
-        isTouching = true
+    func updateTouches(_ slots: [TouchSlot]) {
+        let wasTouching = isTouching
+        touchSlots = slots
+
+        if hapticsEnabled {
+            if !wasTouching && isTouching {
+                hapticManager.startContinuous()
+            }
+            if isTouching {
+                hapticManager.updateForce(maxForce)
+            }
+        }
+
+        if isTouching {
+            audioManager?.setCrackle(force: maxForce)
+        } else if wasTouching {
+            audioManager?.stopCrackle()
+        }
     }
 
-    func endTouch() {
-        isTouching = false
+    func endAllTouches() {
+        touchSlots = []
+        hapticManager.stop()
+        audioManager?.stopCrackle()
+    }
+
+    func triggerDischarge() {
+        dischargeTriggered = true
+        if hapticsEnabled {
+            hapticManager.playDischargeBurst()
+        }
+        audioManager?.triggerDischarge()
     }
 }

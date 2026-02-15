@@ -9,10 +9,11 @@ struct VertexOut {
 struct Uniforms {
     float time;
     float2 resolution;
-    float2 touchPosition;
-    float touchActive;
     float cameraDistance;
     float cameraTime;
+    int touchCount;
+    float dischargeTime;
+    float2 gyroTilt;
 };
 
 // Hash function for pseudo-random star placement
@@ -20,13 +21,6 @@ static float hash21(float2 p) {
     p = fract(p * float2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
-}
-
-static float hash11(float p) {
-    p = fract(p * 0.1031);
-    p *= p + 33.33;
-    p *= p + p;
-    return fract(p);
 }
 
 // Single star layer
@@ -98,17 +92,25 @@ fragment float4 starfieldFragment(VertexOut in [[stage_in]],
     float driftTime = uniforms.cameraTime * 0.008;
     uv += float2(driftTime, driftTime * 0.7);
 
+    // Gyroscope parallax: each layer shifted by tilt with different magnitude
+    float2 tilt = uniforms.gyroTilt;
+
     float3 color = float3(0.005, 0.005, 0.015);
 
-    // Multiple star layers with parallax
-    color += float3(0.8, 0.85, 1.0) * starLayer(uv, 15.0, uniforms.time, 0.0) * 0.6;
-    color += float3(0.9, 0.9, 1.0)  * starLayer(uv * 1.02 + 0.5, 25.0, uniforms.time, 100.0) * 0.4;
-    color += float3(1.0, 0.95, 0.8) * starLayer(uv * 1.05 + 1.3, 40.0, uniforms.time, 200.0) * 0.3;
-    color += float3(0.7, 0.8, 1.0)  * starLayer(uv * 1.08 + 2.1, 60.0, uniforms.time, 300.0) * 0.2;
+    // Multiple star layers with parallax + gyro offset
+    float2 uv1 = uv + tilt * 1.0;
+    float2 uv2 = (uv * 1.02 + 0.5) + tilt * 0.7;
+    float2 uv3 = (uv * 1.05 + 1.3) + tilt * 0.4;
+    float2 uv4 = (uv * 1.08 + 2.1) + tilt * 0.2;
+
+    color += float3(0.8, 0.85, 1.0) * starLayer(uv1, 15.0, uniforms.time, 0.0) * 0.6;
+    color += float3(0.9, 0.9, 1.0)  * starLayer(uv2, 25.0, uniforms.time, 100.0) * 0.4;
+    color += float3(1.0, 0.95, 0.8) * starLayer(uv3, 40.0, uniforms.time, 200.0) * 0.3;
+    color += float3(0.7, 0.8, 1.0)  * starLayer(uv4, 60.0, uniforms.time, 300.0) * 0.2;
 
     // Galaxy patches
-    color += galaxyPatch(uv, 3.0, 500.0);
-    color += galaxyPatch(uv, 5.0, 700.0);
+    color += galaxyPatch(uv + tilt * 0.5, 3.0, 500.0);
+    color += galaxyPatch(uv + tilt * 0.3, 5.0, 700.0);
 
     return float4(color, 1.0);
 }

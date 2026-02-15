@@ -5,6 +5,17 @@ options:
     iOS: "16.0"
   xcodeVersion: "15.0"
   developmentLanguage: en
+  createIntermediateGroups: true
+
+schemes:
+  PlasmaGlobeIOS:
+    build:
+      targets:
+        PlasmaGlobeIOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
 
 targets:
   PlasmaGlobeIOS:

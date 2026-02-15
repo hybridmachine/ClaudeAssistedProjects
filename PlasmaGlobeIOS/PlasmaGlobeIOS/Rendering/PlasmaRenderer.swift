@@ -1,4 +1,5 @@
 import MetalKit
+import Combine
 
 final class PlasmaRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
@@ -10,6 +11,12 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
     private weak var touchHandler: TouchHandler?
     private var cameraTime: Float = 0
     private var lastFrameTime: CFAbsoluteTime?
+
+    private var dischargeStartTime: CFAbsoluteTime?
+    private static let dischargeDuration: CFTimeInterval = 1.5
+
+    var plasmaConfig = PlasmaConfig()
+    var motionManager: MotionManager?
 
     init?(mtkView: MTKView, touchHandler: TouchHandler) {
         guard let device = mtkView.device,
@@ -23,13 +30,11 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
         self.touchHandler = touchHandler
         self.startTime = CFAbsoluteTimeGetCurrent()
 
-        // Create starfield pipeline
         let starfieldDesc = MTLRenderPipelineDescriptor()
         starfieldDesc.vertexFunction = library.makeFunction(name: "fullscreenQuadVertex")
         starfieldDesc.fragmentFunction = library.makeFunction(name: "starfieldFragment")
         starfieldDesc.colorAttachments[0].pixelFormat = mtkView.colorPixelFormat
 
-        // Create plasma pipeline with alpha blending
         let plasmaDesc = MTLRenderPipelineDescriptor()
         plasmaDesc.vertexFunction = library.makeFunction(name: "fullscreenQuadVertex")
         plasmaDesc.fragmentFunction = library.makeFunction(name: "plasmaGlobeFragment")
@@ -50,7 +55,6 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
-        // Generate noise texture
         self.noiseTexture = PlasmaRenderer.makeNoiseTexture(device: device)
 
         super.init()
@@ -102,18 +106,49 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
         if handler.cameraDistance <= 0 {
             let aspect = resolution.x / resolution.y
             let fov: Float = 1.6
-            let targetHalf: Float = 0.35 * aspect // half of 70% screen width in UV
+            let targetHalf: Float = 0.35 * aspect
             handler.cameraDistance = sqrt((fov / targetHalf) * (fov / targetHalf) + 1.0)
         }
 
+        // Handle discharge trigger
+        if handler.dischargeTriggered {
+            handler.dischargeTriggered = false
+            dischargeStartTime = now
+        }
+
+        var dischargeTime: Float = -1.0
+        if let start = dischargeStartTime {
+            let elapsed = now - start
+            if elapsed < Self.dischargeDuration {
+                dischargeTime = Float(elapsed)
+            } else {
+                dischargeStartTime = nil
+            }
+        }
+
+        // Build uniforms
+        let touchSlots = handler.touchSlots
         var uniforms = Uniforms(
             time: time,
             resolution: resolution,
-            touchPosition: handler.touchPosition,
-            touchActive: handler.isTouching ? 1.0 : 0.0,
             cameraDistance: handler.cameraDistance,
-            cameraTime: cameraTime
+            cameraTime: cameraTime,
+            touchCount: Int32(touchSlots.count),
+            dischargeTime: dischargeTime,
+            gyroTilt: motionManager?.tilt ?? .zero
         )
+
+        // Build touch points buffer
+        var touchPoints = [TouchPoint](repeating: TouchPoint(), count: maxTouchSlots)
+        for (i, slot) in touchSlots.prefix(maxTouchSlots).enumerated() {
+            touchPoints[i] = TouchPoint(
+                position: slot.position,
+                force: slot.force,
+                active: 1.0
+            )
+        }
+
+        var config = plasmaConfig
 
         // Pass 1: Starfield
         descriptor.colorAttachments[0].loadAction = .clear
@@ -134,6 +169,8 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) {
             encoder.setRenderPipelineState(plasmaPipeline)
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+            encoder.setFragmentBytes(&touchPoints, length: MemoryLayout<TouchPoint>.stride * maxTouchSlots, index: 1)
+            encoder.setFragmentBytes(&config, length: MemoryLayout<PlasmaConfig>.stride, index: 2)
             encoder.setFragmentTexture(noiseTexture, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             encoder.endEncoding()

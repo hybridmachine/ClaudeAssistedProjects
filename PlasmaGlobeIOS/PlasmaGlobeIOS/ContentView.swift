@@ -1,14 +1,46 @@
 import SwiftUI
 
+final class AppServices: ObservableObject {
+    let audioManager = AudioManager()
+    let motionManager = MotionManager()
+}
+
 struct ContentView: View {
     @StateObject private var touchHandler = TouchHandler()
+    @StateObject private var settings = PlasmaSettings()
+    @StateObject private var services = AppServices()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        MetalView(touchHandler: touchHandler)
-            .ignoresSafeArea()
-            .onChange(of: scenePhase) { newPhase in
-                touchHandler.isActive = (newPhase == .active)
+        ZStack {
+            MetalView(touchHandler: touchHandler, settings: settings, motionManager: services.motionManager)
+                .ignoresSafeArea()
+
+            SettingsOverlay(settings: settings)
+                .allowsHitTesting(true)
+        }
+        .onChange(of: scenePhase) { newPhase in
+            touchHandler.isActive = (newPhase == .active)
+            if newPhase == .active {
+                services.audioManager.start()
+                services.motionManager.start()
+            } else {
+                services.audioManager.stop()
+                services.motionManager.stop()
             }
+        }
+        .onChange(of: settings.soundEnabled) { enabled in
+            services.audioManager.setEnabled(enabled)
+        }
+        .onChange(of: settings.soundVolume) { vol in
+            services.audioManager.updateVolume(Float(vol))
+        }
+        .onAppear {
+            touchHandler.audioManager = services.audioManager
+            services.audioManager.setEnabled(settings.soundEnabled)
+            services.audioManager.updateVolume(Float(settings.soundVolume))
+            services.audioManager.start()
+            services.motionManager.start()
+        }
     }
 }
