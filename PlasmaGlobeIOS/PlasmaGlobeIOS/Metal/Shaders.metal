@@ -385,8 +385,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             // Skip samples inside the profiled post
             if (postSDF(pos) < 0.0) continue;
 
-            half totalCore = 0.0h;
-            half totalGlow = 0.0h;
+            half3 totalColor = half3(0.0h);
 
             for (int j = 0; j < NUM_TENDRILS; j++) {
                 float fj = float(j);
@@ -424,8 +423,8 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 float dist = length(perp - noiseDisp);
 
                 // Thinner tendril profile
-                float coreW = 0.010 + along * 0.005;
-                float glowW = 0.030 + along * 0.020;
+                float coreW = 0.015 + along * 0.008;
+                float glowW = 0.045 + along * 0.030;
                 half core = half(exp(-dist * dist / (coreW * coreW)));
                 half glow = half(fast::exp(-dist * dist / (glowW * glowW)));
 
@@ -434,8 +433,20 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 half fade = half(smoothstep(CORE_R, CORE_R + 0.12, along) *
                              smoothstep(SPHERE_R, SPHERE_R - surfaceMargin, along));
 
-                totalCore += core * fade;
-                totalGlow += glow * fade;
+                // Position-dependent color: pink at base/tips, blue in middle
+                float t = saturate((along - CORE_R) / (SPHERE_R - CORE_R));
+                half midBlend = half(smoothstep(0.0, 0.35, t) - smoothstep(0.65, 1.0, t));
+
+                half3 coreColor = mix(half3(1.0h, 0.7h, 0.85h),    // pink at extremes
+                                      half3(0.85h, 0.85h, 1.0h),     // white-blue in middle
+                                      midBlend);
+                half3 glowColor = mix(half3(0.85h, 0.25h, 0.65h),   // magenta at extremes
+                                      half3(0.45h, 0.25h, 0.9h),     // purple in middle
+                                      midBlend);
+
+                totalColor += coreColor * core * fade;
+                totalColor += glowColor * glow * fade * 0.23h;
+                totalColor += half3(0.8h, 0.2h, 0.6h) * glow * glow * fade * fade * 0.005h;
 
                 // === Branching ===
                 // Only evaluate branches past the fork point
@@ -449,12 +460,13 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                     // Branch 1
                     float3 branchDisp1 = noiseDisp + tendrils[j].branchOffset1 * spread;
                     float bDist1 = length(perp - branchDisp1);
-                    float bCoreW = 0.007 + along * 0.003;
-                    float bGlowW = 0.020 + along * 0.012;
+                    float bCoreW = 0.011 + along * 0.005;
+                    float bGlowW = 0.030 + along * 0.018;
                     half bCore1 = half(exp(-bDist1 * bDist1 / (bCoreW * bCoreW)));
                     half bGlow1 = half(fast::exp(-bDist1 * bDist1 / (bGlowW * bGlowW)));
-                    totalCore += bCore1 * fade * half(branchFadeIn) * 0.7h;
-                    totalGlow += bGlow1 * fade * half(branchFadeIn) * 0.7h;
+                    half bFade1 = fade * half(branchFadeIn) * 0.7h;
+                    totalColor += coreColor * bCore1 * bFade1;
+                    totalColor += glowColor * bGlow1 * bFade1 * 0.23h;
 
                     // Branch 2 (if this tendril has 2 branches)
                     if (tendrils[j].branchCount > 1) {
@@ -462,20 +474,15 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                         float bDist2 = length(perp - branchDisp2);
                         half bCore2 = half(exp(-bDist2 * bDist2 / (bCoreW * bCoreW)));
                         half bGlow2 = half(fast::exp(-bDist2 * bDist2 / (bGlowW * bGlowW)));
-                        totalCore += bCore2 * fade * half(branchFadeIn) * 0.7h;
-                        totalGlow += bGlow2 * fade * half(branchFadeIn) * 0.7h;
+                        half bFade2 = fade * half(branchFadeIn) * 0.7h;
+                        totalColor += coreColor * bCore2 * bFade2;
+                        totalColor += glowColor * bGlow2 * bFade2 * 0.23h;
                     }
                 }
             }
 
-            totalCore = min(totalCore, 5.0h);
-            totalGlow = min(totalGlow, 8.0h);
-
-            // Color: white/blue core, purple/pink glow (scaled ~0.65x for more tendrils)
-            half3 stepCol = half3(0.0h);
-            stepCol += half3(0.95h, 0.95h, 1.0h) * totalCore * 1.0h;
-            stepCol += half3(0.5h, 0.3h, 0.9h) * totalGlow * 0.23h;
-            stepCol += half3(0.8h, 0.2h, 0.6h) * totalGlow * totalGlow * 0.005h;
+            totalColor = min(totalColor, half3(5.0h));
+            half3 stepCol = totalColor;
 
             // Central electrode glow
             half cg = half(fast::exp(-r * 12.0)) * 3.0h;
