@@ -54,10 +54,12 @@ Uniforms passed each frame: `time`, `resolution`, `touchPosition`, `isTouching`.
 4. When touching, tendrils blend toward touch direction (35%–60%)
 
 ## Key Shader Constants (Shaders.metal)
-- `NUM_TENDRILS = 7` — plasma arm count
+- `NUM_TENDRILS = 12` — plasma arm count (with branching forks)
 - `VOL_STEPS = 28` — ray-march sample count
 - `SPHERE_R = 1.0` — globe radius
 - `CORE_R = 0.06` — central electrode radius
+- `POST_RADIUS_MAX = 0.095` — center post bounding cylinder radius (actual profile varies via `postRadius(y)`)
+- `QUICK_REJECT_DIST = 0.25` — perpendicular distance threshold for tendril skip
 
 ## Build & Run
 ```bash
