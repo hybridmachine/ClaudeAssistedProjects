@@ -9,13 +9,12 @@ final class AudioManager {
     // Render-thread-only state (not shared with main thread)
     private var humPhase: Float = 0
     private var humPhase2: Float = 0
-    private var crackleGain: Float = 0
 
     // Shared state between main thread and audio render thread
     private struct AudioParams {
         var isEnabled: Bool = true
         var volume: Float = 0.5
-        var targetCrackleGain: Float = 0
+        var targetHumBoost: Float = 0
         var dischargeEnvelope: Float = 0
     }
     private let params = OSAllocatedUnfairLock(initialState: AudioParams())
@@ -74,6 +73,7 @@ final class AudioManager {
         // humPhase/humPhase2 are captured by value then stored locally in closure
         var localHumPhase: Float = 0
         var localHumPhase2: Float = 0
+        var localHumBoost: Float = 0
         let humParams = self.params
 
         let humSource = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
@@ -83,33 +83,36 @@ final class AudioManager {
             let frames = Int(frameCount)
             guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
 
-            let vol = p.isEnabled ? p.volume * 0.15 : 0
             let sr: Float = 44100
             for i in 0..<frames {
-                let fundamental = sin(localHumPhase * 2 * .pi) * 0.4
-                let harmonic2 = sin(localHumPhase * 4 * .pi) * 0.2
-                let harmonic3 = sin(localHumPhase * 6 * .pi) * 0.1
-                let harmonic5 = sin(localHumPhase * 10 * .pi) * 0.05
+                // Smoothly interpolate toward target touch boost
+                localHumBoost += (p.targetHumBoost - localHumBoost) * 0.0005
 
-                let mod = 1.0 + sin(localHumPhase2 * 2 * .pi) * 0.15
-                let sample = (fundamental + harmonic2 + harmonic3 + harmonic5) * mod * vol
+                // Volume scales from quiet ambient (0.10) to loud touched (0.25)
+                let vol = p.isEnabled ? p.volume * (0.10 + localHumBoost * 0.15) : 0
+
+                let fundamental = sin(localHumPhase * 2 * .pi) * 0.5
+                let harmonic2 = sin(localHumPhase * 4 * .pi) * 0.12
+                let harmonic3 = sin(localHumPhase * 6 * .pi) * 0.03
+
+                let mod = 1.0 + sin(localHumPhase2 * 2 * .pi) * 0.08
+                let sample = (fundamental + harmonic2 + harmonic3) * mod * vol
 
                 data[i] = sample
 
                 localHumPhase += 60.0 / sr
                 if localHumPhase > 1.0 { localHumPhase -= 1.0 }
-                localHumPhase2 += 0.5 / sr
+                localHumPhase2 += 0.3 / sr
                 if localHumPhase2 > 1.0 { localHumPhase2 -= 1.0 }
             }
             return noErr
         }
 
-        // Crackle + discharge: band-filtered noise
-        var localCrackleGain: Float = 0
-        let crackleParams = self.params
+        // Discharge effect only (crackle removed — hum handles touch feedback)
+        let dischargeParams = self.params
 
         let crackleSource = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
-            var p = crackleParams.withLock { $0 }
+            var p = dischargeParams.withLock { $0 }
             let bufferList = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let buffer = bufferList[0]
             let frames = Int(frameCount)
@@ -118,30 +121,17 @@ final class AudioManager {
             let vol = p.isEnabled ? p.volume : 0
 
             for i in 0..<frames {
-                localCrackleGain += (p.targetCrackleGain - localCrackleGain) * 0.001
-
-                let noise = Float.random(in: -1...1)
-
-                var crackleSample: Float = 0
-                if localCrackleGain > 0.01 {
-                    let burstProb = Float.random(in: 0...1)
-                    if burstProb > 0.92 {
-                        crackleSample = noise * localCrackleGain * 0.4
-                    }
-                }
-
-                var dischargeSample: Float = 0
                 if p.dischargeEnvelope > 0.001 {
-                    dischargeSample = noise * p.dischargeEnvelope * 0.6
+                    let noise = Float.random(in: -1...1)
+                    data[i] = noise * p.dischargeEnvelope * 0.6 * vol
                     p.dischargeEnvelope *= 0.9997
+                } else {
+                    data[i] = 0
                 }
-
-                data[i] = (crackleSample + dischargeSample) * vol
             }
 
-            // Write back the decayed discharge envelope
             let finalEnvelope = p.dischargeEnvelope
-            crackleParams.withLock { $0.dischargeEnvelope = finalEnvelope }
+            dischargeParams.withLock { $0.dischargeEnvelope = finalEnvelope }
 
             return noErr
         }
@@ -171,11 +161,11 @@ final class AudioManager {
     }
 
     func setCrackle(force: Float) {
-        params.withLock { $0.targetCrackleGain = force }
+        params.withLock { $0.targetHumBoost = min(force, 1.0) }
     }
 
     func stopCrackle() {
-        params.withLock { $0.targetCrackleGain = 0 }
+        params.withLock { $0.targetHumBoost = 0 }
     }
 
     func triggerDischarge() {
