@@ -10,6 +10,11 @@ final class PlasmaSettings: ObservableObject {
     @AppStorage("hapticsEnabled") var hapticsEnabled: Bool = true
     @AppStorage("soundEnabled") var soundEnabled: Bool = true
     @AppStorage("soundVolume") var soundVolume: Double = 0.5
+    @AppStorage("dischargeSoundStyle") var dischargeSoundStyleId: String = "crystalline_chime"
+
+    var dischargeSoundStyle: DischargeSoundStyle {
+        DischargeSoundStyle.from(id: dischargeSoundStyleId)
+    }
 
     var selectedTheme: ColorTheme {
         ColorTheme.allThemes.first { $0.id == selectedThemeId } ?? .classicPink

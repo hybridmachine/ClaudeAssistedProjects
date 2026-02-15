@@ -35,10 +35,14 @@ struct ContentView: View {
         .onChange(of: settings.soundVolume) { vol in
             services.audioManager.updateVolume(Float(vol))
         }
+        .onChange(of: settings.dischargeSoundStyleId) { _ in
+            services.audioManager.setDischargeSoundStyle(settings.dischargeSoundStyle)
+        }
         .onAppear {
             touchHandler.audioManager = services.audioManager
             services.audioManager.setEnabled(settings.soundEnabled)
             services.audioManager.updateVolume(Float(settings.soundVolume))
+            services.audioManager.setDischargeSoundStyle(settings.dischargeSoundStyle)
             services.audioManager.start()
             services.motionManager.start()
         }

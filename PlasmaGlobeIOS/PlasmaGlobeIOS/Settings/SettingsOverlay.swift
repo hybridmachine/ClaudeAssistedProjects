@@ -6,7 +6,7 @@ struct SettingsOverlay: View {
     @State private var hideTimer: Timer?
 
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             HStack {
                 Spacer()
                 Button {
@@ -24,13 +24,18 @@ struct SettingsOverlay: View {
                 .padding(.trailing, 16)
                 .padding(.top, 8)
             }
+            .fixedSize(horizontal: false, vertical: true)
 
             if isVisible {
-                settingsPanel
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                ScrollView(.vertical, showsIndicators: false) {
+                    settingsPanel
+                        .padding(.top, 4)
+                        .padding(.bottom, 16)
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
         .onDisappear {
             hideTimer?.invalidate()
@@ -84,6 +89,20 @@ struct SettingsOverlay: View {
 
             if settings.soundEnabled {
                 settingsSlider(label: "Volume", value: $settings.soundVolume, range: 0...1)
+
+                HStack {
+                    Text("Discharge Sound")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                    Spacer()
+                    Picker("", selection: $settings.dischargeSoundStyleId) {
+                        ForEach(DischargeSoundStyle.allCases) { style in
+                            Text(style.name).tag(style.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(.purple)
+                }
             }
         }
         .padding(16)
