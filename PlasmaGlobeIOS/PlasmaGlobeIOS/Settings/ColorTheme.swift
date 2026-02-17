@@ -10,7 +10,7 @@ struct ColorTheme: Identifiable {
     let shellTint: SIMD4<Float>
     let contactColor: SIMD4<Float>
 
-    func toPlasmaConfig(tendrilCount: Int32, brightness: Float, speed: Float, thickness: Float) -> PlasmaConfig {
+    func toPlasmaConfig(tendrilCount: Int32, brightness: Float, speed: Float, thickness: Float, respawnRate: Float) -> PlasmaConfig {
         PlasmaConfig(
             coreColorA: coreColorA,
             coreColorB: coreColorB,
@@ -21,7 +21,8 @@ struct ColorTheme: Identifiable {
             tendrilCount: tendrilCount,
             brightness: brightness,
             speed: speed,
-            tendrilThickness: thickness
+            tendrilThickness: thickness,
+            respawnRate: respawnRate
         )
     }
 
