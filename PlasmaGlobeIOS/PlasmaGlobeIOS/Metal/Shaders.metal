@@ -38,11 +38,12 @@ struct PlasmaConfig {
     float brightness;
     float speed;
     float tendrilThickness;
+    float respawnRate;
 };
 
 constant int MAX_TENDRILS = 20;
 constant int MAX_TOUCHES = 5;
-constant int VOL_STEPS = 28;
+constant int VOL_STEPS = 40;
 constant float SPHERE_R = 1.0;
 constant float CORE_R = 0.06;
 constant float POST_RADIUS_MAX = 0.095;
@@ -223,13 +224,25 @@ struct TendrilInfo {
     float flicker;
 };
 
-static TendrilInfo computeTendril(int idx, float time,
+static TendrilInfo computeTendril(int idx, float time, float realTime,
                                    thread float3 *touchDirs, thread float *touchForces,
-                                   int touchCount, float speed) {
+                                   int touchCount, float speed, float respawnRate) {
     float fi = float(idx);
 
-    float theta = fi * 2.39996 + time * 0.13 * speed + sin(time * 0.09 * speed + fi * 0.7) * 0.5;
-    float cosArg = clamp(1.0 - 2.0 * fract(fi * 0.618034 + 0.5)
+    // Lifecycle: each tendril lives 3-7 real seconds then respawns at a new position
+    float lifeHash = fract(fi * 0.5281 + 0.321);
+    float phaseHash = fract(fi * 0.8713 + 0.654);
+    float period = (3.0 + lifeHash * 4.0) / max(respawnRate, 0.1);
+    float lifecycleTime = realTime + phaseHash * period;
+    float generation = floor(lifecycleTime / period);
+    float timeInCycle = fract(lifecycleTime / period) * period;
+
+    // Per-generation random offsets so the tendril respawns at a new position each cycle
+    float genTheta = fract(sin(generation * 127.1 + fi * 311.7) * 43758.5453) * 6.2832;
+    float genPhi = fract(sin(generation * 269.5 + fi * 183.3) * 43758.5453);
+
+    float theta = fi * 2.39996 + time * 0.13 * speed + sin(time * 0.09 * speed + fi * 0.7) * 0.5 + genTheta;
+    float cosArg = clamp(1.0 - 2.0 * genPhi
                          + sin(time * 0.07 * speed + fi * 1.1) * 0.12,
                          -1.0, 1.0);
     float phi = acos(cosArg);
@@ -267,9 +280,10 @@ static TendrilInfo computeTendril(int idx, float time,
     float3 rt = normalize(cross(baseDir, up));
     float3 fw = cross(rt, baseDir);
 
-    float hash1 = fract(fi * 0.7631 + 0.123);
-    float hash2 = fract(fi * 0.4519 + 0.789);
-    float hash3 = fract(fi * 0.9137 + 0.456);
+    float genSeed = generation * 7.31;
+    float hash1 = fract(fi * 0.7631 + 0.123 + genSeed);
+    float hash2 = fract(fi * 0.4519 + 0.789 + genSeed);
+    float hash3 = fract(fi * 0.9137 + 0.456 + genSeed);
 
     TendrilInfo info;
     info.dir = baseDir;
@@ -285,10 +299,10 @@ static TendrilInfo computeTendril(int idx, float time,
     info.branchOffset2 = normalize(rt * cos(angle2) + fw * sin(angle2));
     info.branchCount = (hash3 > 0.4) ? 2 : 1;
 
-    // Per-tendril flicker: 0.7-1.0 at 3-7 Hz with golden-ratio phase offset
-    float flickerSpeed = 3.0 + hash1 * 4.0;
-    float flickerPhase = fi * 2.39996;
-    info.flicker = 0.7 + 0.3 * sin(time * flickerSpeed + flickerPhase);
+    // Lifecycle fade: quick fade in/out at lifecycle boundaries
+    float fadeIn = smoothstep(0.0, 0.2, timeInCycle);
+    float fadeOut = smoothstep(0.0, 0.2, period - timeInCycle);
+    info.flicker = fadeIn * fadeOut;
 
     return info;
 }
@@ -342,7 +356,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
     // Pre-compute tendril data
     TendrilInfo tendrils[MAX_TENDRILS];
     for (int j = 0; j < numTendrils; j++) {
-        tendrils[j] = computeTendril(j, time, touchDirs, touchForces, touchCount, config.speed);
+        tendrils[j] = computeTendril(j, time, uniforms.time, touchDirs, touchForces, touchCount, config.speed, config.respawnRate);
         // Subtle sway from device tilt
         tendrils[j].dir = normalize(tendrils[j].dir + tiltOffset);
     }
@@ -397,7 +411,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
 
         // === Volumetric plasma tendrils ===
         half3 plasma = half3(0.0h);
-        int stepCount = int(clamp(pathLen * 18.0, 12.0, float(VOL_STEPS)));
+        int stepCount = int(clamp(pathLen * 25.0, 20.0, float(VOL_STEPS)));
         float dt = pathLen / float(stepCount);
 
         for (int i = 0; i < stepCount; i++) {
@@ -452,10 +466,10 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 // Force modulates width (+50% at max force)
                 float forceWidth = 1.0 + (fScale - 1.0) * 0.625;
                 float taper = 1.0 - along * 0.3;
-                float coreW = 0.007 * thickness * forceWidth * taper;
+                float coreW = 0.015 * thickness * forceWidth * taper;
                 float glowW = (0.035 + along * 0.015) * thickness * forceWidth;
                 float coreArg = dist / max(coreW, 0.001);
-                half core = half(exp(-(coreArg * coreArg * coreArg * coreArg)));
+                half core = half(exp(-(coreArg * coreArg)));
                 half glow = half(fast::exp(-dist * dist / (glowW * glowW)));
 
                 // Force modulates brightness (+80% at max force), per-tendril flicker
@@ -477,7 +491,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 half trans = half(exp(-dist * dist / (float(transW) * float(transW))));
                 half3 transColor = mix(themeCore, glowColor, 0.5h);
 
-                totalColor += whiteCore * core * fade * forceBright * 1.5h;
+                totalColor += whiteCore * core * fade * forceBright * 0.8h;
                 totalColor += transColor * trans * fade * 0.15h * forceBright;
                 totalColor += glowColor * glow * fade * 0.23h * forceBright;
 
@@ -490,23 +504,23 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                     float3 branchDisp1 = noiseDisp + tendrils[j].branchOffset1 * spread;
                     float bDist1 = length(perp - branchDisp1);
                     float bTaper = 1.0 - along * 0.3;
-                    float bCoreW = 0.004 * thickness * forceWidth * bTaper;
+                    float bCoreW = 0.009 * thickness * forceWidth * bTaper;
                     float bGlowW = (0.015 + along * 0.008) * thickness * forceWidth;
                     float bCoreArg1 = bDist1 / max(bCoreW, 0.001);
-                    half bCore1 = half(exp(-(bCoreArg1 * bCoreArg1 * bCoreArg1 * bCoreArg1)));
+                    half bCore1 = half(exp(-(bCoreArg1 * bCoreArg1)));
                     half bGlow1 = half(fast::exp(-bDist1 * bDist1 / (bGlowW * bGlowW)));
                     half bFade1 = fade * half(branchFadeIn) * 0.4h;
-                    totalColor += whiteCore * bCore1 * bFade1 * forceBright * 1.2h;
+                    totalColor += whiteCore * bCore1 * bFade1 * forceBright * 0.6h;
                     totalColor += glowColor * bGlow1 * bFade1 * 0.18h * forceBright;
 
                     if (tendrils[j].branchCount > 1) {
                         float3 branchDisp2 = noiseDisp + tendrils[j].branchOffset2 * spread;
                         float bDist2 = length(perp - branchDisp2);
                         float bCoreArg2 = bDist2 / max(bCoreW, 0.001);
-                        half bCore2 = half(exp(-(bCoreArg2 * bCoreArg2 * bCoreArg2 * bCoreArg2)));
+                        half bCore2 = half(exp(-(bCoreArg2 * bCoreArg2)));
                         half bGlow2 = half(fast::exp(-bDist2 * bDist2 / (bGlowW * bGlowW)));
                         half bFade2 = fade * half(branchFadeIn) * 0.4h;
-                        totalColor += whiteCore * bCore2 * bFade2 * forceBright * 1.2h;
+                        totalColor += whiteCore * bCore2 * bFade2 * forceBright * 0.6h;
                         totalColor += glowColor * bGlow2 * bFade2 * 0.18h * forceBright;
                     }
                 }

@@ -74,6 +74,8 @@ struct SettingsOverlay: View {
 
             settingsSlider(label: "Thickness", value: $settings.tendrilThickness, range: 0.5...2.0)
 
+            settingsSlider(label: "Respawn", value: $settings.respawnRate, range: 0.25...3.0)
+
             Divider().background(Color.white.opacity(0.2))
 
             // Toggles

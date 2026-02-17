@@ -13,6 +13,7 @@ final class PlasmaSettings: ObservableObject {
     @AppStorage("dischargeSoundStyle") var dischargeSoundStyleId: String = "crystalline_chime"
     @AppStorage("humFrequency") var humFrequency: Double = 60.0
     @AppStorage("tiltEnabled") var tiltEnabled: Bool = true
+    @AppStorage("respawnRate") var respawnRate: Double = 1.0
 
     var dischargeSoundStyle: DischargeSoundStyle {
         DischargeSoundStyle.from(id: dischargeSoundStyleId)
@@ -27,7 +28,8 @@ final class PlasmaSettings: ObservableObject {
             tendrilCount: Int32(tendrilCount),
             brightness: Float(brightness),
             speed: Float(speed),
-            thickness: Float(tendrilThickness)
+            thickness: Float(tendrilThickness),
+            respawnRate: Float(respawnRate)
         )
     }
 }
