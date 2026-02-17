@@ -90,6 +90,10 @@ struct SettingsOverlay: View {
             if settings.soundEnabled {
                 settingsSlider(label: "Volume", value: $settings.soundVolume, range: 0...1)
 
+                settingsSlider(label: "Hum Tone", value: $settings.humFrequency, range: 60...480, step: 1) {
+                    Text("\(Int(settings.humFrequency)) Hz")
+                }
+
                 HStack {
                     Text("Discharge Sound")
                         .font(.caption)

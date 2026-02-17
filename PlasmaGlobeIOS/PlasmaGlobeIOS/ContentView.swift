@@ -38,11 +38,15 @@ struct ContentView: View {
         .onChange(of: settings.dischargeSoundStyleId) { _ in
             services.audioManager.setDischargeSoundStyle(settings.dischargeSoundStyle)
         }
+        .onChange(of: settings.humFrequency) { freq in
+            services.audioManager.setHumFrequency(Float(freq))
+        }
         .onAppear {
             touchHandler.audioManager = services.audioManager
             services.audioManager.setEnabled(settings.soundEnabled)
             services.audioManager.updateVolume(Float(settings.soundVolume))
             services.audioManager.setDischargeSoundStyle(settings.dischargeSoundStyle)
+            services.audioManager.setHumFrequency(Float(settings.humFrequency))
             services.audioManager.start()
             services.motionManager.start()
         }
