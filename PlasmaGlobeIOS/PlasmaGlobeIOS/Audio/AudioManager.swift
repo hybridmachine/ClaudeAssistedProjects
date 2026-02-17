@@ -13,6 +13,7 @@ final class AudioManager {
         var targetHumBoost: Float = 0
         var dischargeEnvelope: Float = 0
         var dischargeSoundStyle: Int = 1  // crystallineChime default
+        var humFrequency: Float = 60.0
         var dischargeTriggered: Bool = false
     }
     private let params = OSAllocatedUnfairLock(initialState: AudioParams())
@@ -98,7 +99,7 @@ final class AudioManager {
 
                 data[i] = sample
 
-                localHumPhase += 60.0 / sr
+                localHumPhase += p.humFrequency / sr
                 if localHumPhase > 1.0 { localHumPhase -= 1.0 }
                 localHumPhase2 += 0.3 / sr
                 if localHumPhase2 > 1.0 { localHumPhase2 -= 1.0 }
@@ -256,5 +257,9 @@ final class AudioManager {
 
     func setEnabled(_ enabled: Bool) {
         params.withLock { $0.isEnabled = enabled }
+    }
+
+    func setHumFrequency(_ freq: Float) {
+        params.withLock { $0.humFrequency = freq }
     }
 }

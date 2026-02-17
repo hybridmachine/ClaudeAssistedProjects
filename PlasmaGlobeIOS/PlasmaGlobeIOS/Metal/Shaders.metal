@@ -220,6 +220,7 @@ struct TendrilInfo {
     float3 branchOffset1;
     float3 branchOffset2;
     int branchCount;
+    float flicker;
 };
 
 static TendrilInfo computeTendril(int idx, float time,
@@ -283,6 +284,11 @@ static TendrilInfo computeTendril(int idx, float time,
     float angle2 = angle1 + M_PI_F * 0.6 + hash3 * 0.4;
     info.branchOffset2 = normalize(rt * cos(angle2) + fw * sin(angle2));
     info.branchCount = (hash3 > 0.4) ? 2 : 1;
+
+    // Per-tendril flicker: 0.7-1.0 at 3-7 Hz with golden-ratio phase offset
+    float flickerSpeed = 3.0 + hash1 * 4.0;
+    float flickerPhase = fi * 2.39996;
+    info.flicker = 0.7 + 0.3 * sin(time * flickerSpeed + flickerPhase);
 
     return info;
 }
@@ -372,8 +378,13 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                        + float3(0.15, 0.15, 0.25) * spec2 * 0.2;
 
             float3 postPoint = ro + rd * postHit.t;
-            float topProximity = smoothstep(-0.15, 0.0, postPoint.y);
-            postColor += config.glowColorB.rgb * topProximity * 0.5;
+            float topProximity = smoothstep(-0.15, 0.05, postPoint.y);
+            float3 electrodeColor = mix(config.glowColorB.rgb, float3(1.0), 0.3);
+            postColor += electrodeColor * topProximity * 1.2;
+            // Hot-spot at dome apex
+            float3 upDir = float3(0.0, 1.0, 0.0);
+            float hotSpot = pow(max(dot(postHit.normal, upDir), 0.0), 3.0) * 0.8;
+            postColor += electrodeColor * hotSpot;
         }
 
         // === Glass shell ===
@@ -427,17 +438,28 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                     noiseDisp += (tRight * nx2 + tFwd * ny2) * dispAmt * 0.3;
                 }
 
+                // Ridged noise for angular kinks in outer half
+                if (along > 0.4) {
+                    float3 np3 = float3(along * 14.0, fj * 31.7 + time * 0.7, fj * 21.9);
+                    float rx = abs(tnoise(np3, noiseTex, smp) - 0.5);
+                    float ry = abs(tnoise(np3 + float3(293, 0, 0), noiseTex, smp) - 0.5);
+                    float kinkAmt = smoothstep(0.4, 0.7, along) * 0.15;
+                    noiseDisp += (tRight * (rx * rx) + tFwd * (ry * ry)) * kinkAmt;
+                }
+
                 float dist = length(perp - noiseDisp);
 
                 // Force modulates width (+50% at max force)
                 float forceWidth = 1.0 + (fScale - 1.0) * 0.625;
-                float coreW = (0.015 + along * 0.008) * thickness * forceWidth;
-                float glowW = (0.045 + along * 0.030) * thickness * forceWidth;
-                half core = half(exp(-dist * dist / (coreW * coreW)));
+                float taper = 1.0 - along * 0.3;
+                float coreW = 0.007 * thickness * forceWidth * taper;
+                float glowW = (0.035 + along * 0.015) * thickness * forceWidth;
+                float coreArg = dist / max(coreW, 0.001);
+                half core = half(exp(-(coreArg * coreArg * coreArg * coreArg)));
                 half glow = half(fast::exp(-dist * dist / (glowW * glowW)));
 
-                // Force modulates brightness (+80% at max force)
-                half forceBright = half(fScale);
+                // Force modulates brightness (+80% at max force), per-tendril flicker
+                half forceBright = half(fScale) * half(tendrils[j].flicker);
 
                 float surfaceMargin = mix(0.05, 0.005, tendrils[j].touchBias);
                 half fade = half(smoothstep(CORE_R, CORE_R + 0.12, along) *
@@ -447,37 +469,45 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 float t = saturate((along - CORE_R) / (SPHERE_R - CORE_R));
                 half midBlend = half(smoothstep(0.0, 0.35, t) - smoothstep(0.65, 1.0, t));
 
-                half3 coreColor = mix(half3(config.coreColorA.rgb), half3(config.coreColorB.rgb), midBlend);
+                half3 themeCore = mix(half3(config.coreColorA.rgb), half3(config.coreColorB.rgb), midBlend);
                 half3 glowColor = mix(half3(config.glowColorA.rgb), half3(config.glowColorB.rgb), midBlend);
+                half3 whiteCore = mix(mix(themeCore, half3(1.0h), 0.85h), half3(0.9h, 0.92h, 1.0h), 0.3h);
 
-                totalColor += coreColor * core * fade * forceBright;
+                half transW = half((coreW + glowW) * 0.5);
+                half trans = half(exp(-dist * dist / (float(transW) * float(transW))));
+                half3 transColor = mix(themeCore, glowColor, 0.5h);
+
+                totalColor += whiteCore * core * fade * forceBright * 1.5h;
+                totalColor += transColor * trans * fade * 0.15h * forceBright;
                 totalColor += glowColor * glow * fade * 0.23h * forceBright;
-                totalColor += half3(config.glowColorA.rgb) * glow * glow * fade * fade * 0.005h;
 
-                // === Branching ===
+                // === Branching (subtle thin filaments) ===
                 if (along > tendrils[j].forkPoint) {
                     float branchT = (along - tendrils[j].forkPoint) / (1.0 - tendrils[j].forkPoint);
                     float branchFadeIn = smoothstep(0.0, 0.15, branchT);
-                    float spread = branchT * 0.12;
+                    float spread = branchT * 0.07;
 
                     float3 branchDisp1 = noiseDisp + tendrils[j].branchOffset1 * spread;
                     float bDist1 = length(perp - branchDisp1);
-                    float bCoreW = (0.011 + along * 0.005) * thickness * forceWidth;
-                    float bGlowW = (0.030 + along * 0.018) * thickness * forceWidth;
-                    half bCore1 = half(exp(-bDist1 * bDist1 / (bCoreW * bCoreW)));
+                    float bTaper = 1.0 - along * 0.3;
+                    float bCoreW = 0.004 * thickness * forceWidth * bTaper;
+                    float bGlowW = (0.015 + along * 0.008) * thickness * forceWidth;
+                    float bCoreArg1 = bDist1 / max(bCoreW, 0.001);
+                    half bCore1 = half(exp(-(bCoreArg1 * bCoreArg1 * bCoreArg1 * bCoreArg1)));
                     half bGlow1 = half(fast::exp(-bDist1 * bDist1 / (bGlowW * bGlowW)));
-                    half bFade1 = fade * half(branchFadeIn) * 0.7h;
-                    totalColor += coreColor * bCore1 * bFade1 * forceBright;
-                    totalColor += glowColor * bGlow1 * bFade1 * 0.23h * forceBright;
+                    half bFade1 = fade * half(branchFadeIn) * 0.4h;
+                    totalColor += whiteCore * bCore1 * bFade1 * forceBright * 1.2h;
+                    totalColor += glowColor * bGlow1 * bFade1 * 0.18h * forceBright;
 
                     if (tendrils[j].branchCount > 1) {
                         float3 branchDisp2 = noiseDisp + tendrils[j].branchOffset2 * spread;
                         float bDist2 = length(perp - branchDisp2);
-                        half bCore2 = half(exp(-bDist2 * bDist2 / (bCoreW * bCoreW)));
+                        float bCoreArg2 = bDist2 / max(bCoreW, 0.001);
+                        half bCore2 = half(exp(-(bCoreArg2 * bCoreArg2 * bCoreArg2 * bCoreArg2)));
                         half bGlow2 = half(fast::exp(-bDist2 * bDist2 / (bGlowW * bGlowW)));
-                        half bFade2 = fade * half(branchFadeIn) * 0.7h;
-                        totalColor += coreColor * bCore2 * bFade2 * forceBright;
-                        totalColor += glowColor * bGlow2 * bFade2 * 0.23h * forceBright;
+                        half bFade2 = fade * half(branchFadeIn) * 0.4h;
+                        totalColor += whiteCore * bCore2 * bFade2 * forceBright * 1.2h;
+                        totalColor += glowColor * bGlow2 * bFade2 * 0.18h * forceBright;
                     }
                 }
             }
@@ -485,12 +515,30 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             totalColor = min(totalColor, half3(5.0h));
             half3 stepCol = totalColor;
 
-            half cg = half(fast::exp(-r * 12.0)) * 3.0h;
+            half cg = half(fast::exp(-r * 10.0)) * 5.0h;
             stepCol += half3(config.coreColorB.rgb) * cg;
+            // Soft ambient fill using average glow color
+            half3 ambientColor = (half3(config.glowColorA.rgb) + half3(config.glowColorB.rgb)) * 0.5h;
+            half ambient = half(fast::exp(-r * 3.5)) * 0.08h;
+            stepCol += ambientColor * ambient;
 
             plasma += stepCol * half(dt);
 
             if (dot(plasma, plasma) > 9.0h) break;
+        }
+
+        // === Per-tendril glass termination glow ===
+        for (int j = 0; j < numTendrils; j++) {
+            float3 tDir = tendrils[j].dir;
+            // Approximate glass endpoint: tendril direction scaled to sphere surface
+            float3 glassPoint = normalize(tDir) * SPHERE_R;
+            float3 glassNormal = normalize(glassPoint);
+            float surfaceDot = max(dot(normal, glassNormal), 0.0);
+            half tightSpot = half(pow(surfaceDot, 60.0) * 0.1);
+            half wideHalo = half(pow(surfaceDot, 12.0) * 0.010);
+            half3 spotColor = half3(0.9h, 0.92h, 1.0h) * tightSpot;
+            half3 haloColor = mix(half3(config.glowColorA.rgb), half3(config.glowColorB.rgb), 0.5h) * wideHalo;
+            plasma += spotColor + haloColor;
         }
 
         // === Discharge flash ===
