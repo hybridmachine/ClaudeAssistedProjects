@@ -3,7 +3,12 @@ import simd
 
 final class MotionManager {
     private let motionManager = CMMotionManager()
-    private(set) var tilt: SIMD2<Float> = .zero
+    private var rawTilt: SIMD2<Float> = .zero
+    var isEnabled: Bool = true
+
+    var tilt: SIMD2<Float> {
+        isEnabled ? rawTilt : .zero
+    }
 
     func start() {
         guard motionManager.isDeviceMotionAvailable else { return }
@@ -14,12 +19,12 @@ final class MotionManager {
             let maxAngle: Double = .pi / 4.0
             let pitch = Float(max(-1, min(1, motion.attitude.pitch / maxAngle)))
             let roll = Float(max(-1, min(1, motion.attitude.roll / maxAngle)))
-            self.tilt = SIMD2<Float>(roll, pitch)
+            self.rawTilt = SIMD2<Float>(roll, pitch)
         }
     }
 
     func stop() {
         motionManager.stopDeviceMotionUpdates()
-        tilt = .zero
+        rawTilt = .zero
     }
 }
