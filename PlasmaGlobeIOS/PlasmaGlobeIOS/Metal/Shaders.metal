@@ -240,11 +240,22 @@ static TendrilInfo computeTendril(int idx, float time, float realTime,
     // Per-generation random offsets so the tendril respawns at a new position each cycle
     float genTheta = fract(sin(generation * 127.1 + fi * 311.7) * 43758.5453) * 6.2832;
     float genPhi = fract(sin(generation * 269.5 + fi * 183.3) * 43758.5453);
+    float genSeed = generation * 7.31;
 
-    float theta = fi * 2.39996 + time * 0.13 * speed + sin(time * 0.09 * speed + fi * 0.7) * 0.5 + genTheta;
-    float cosArg = clamp(1.0 - 2.0 * genPhi
-                         + sin(time * 0.07 * speed + fi * 1.1) * 0.12,
-                         -1.0, 1.0);
+    // Organic meandering around spawn position (no continuous orbit)
+    float wanderTheta = sin(time * 0.17 * speed + fi * 2.3 + genSeed) * 0.25
+                      + sin(time * 0.11 * speed + fi * 4.1 + genSeed * 1.7) * 0.15
+                      + sin(time * 0.07 * speed + fi * 6.7 + genSeed * 2.3) * 0.08;
+    float theta = fi * 2.39996 + genTheta + wanderTheta;
+
+    // Slow upward drift over lifecycle + vertical meandering
+    float lifecycleProgress = timeInCycle / period;
+    float upwardDrift = lifecycleProgress * 0.35;
+
+    float wanderPhi = sin(time * 0.13 * speed + fi * 3.7 + genSeed * 1.3) * 0.08
+                    + sin(time * 0.09 * speed + fi * 5.3 + genSeed * 2.1) * 0.05;
+
+    float cosArg = clamp(1.0 - 2.0 * genPhi + upwardDrift + wanderPhi, -1.0, 1.0);
     float phi = acos(cosArg);
 
     float3 baseDir = normalize(float3(
@@ -280,7 +291,6 @@ static TendrilInfo computeTendril(int idx, float time, float realTime,
     float3 rt = normalize(cross(baseDir, up));
     float3 fw = cross(rt, baseDir);
 
-    float genSeed = generation * 7.31;
     float hash1 = fract(fi * 0.7631 + 0.123 + genSeed);
     float hash2 = fract(fi * 0.4519 + 0.789 + genSeed);
     float hash3 = fract(fi * 0.9137 + 0.456 + genSeed);
