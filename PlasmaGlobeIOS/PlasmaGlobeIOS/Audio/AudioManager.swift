@@ -98,7 +98,7 @@ final class AudioManager {
 
                 data[i] = sample
 
-                localHumPhase += 60.0 / sr
+                localHumPhase += 240.0 / sr
                 if localHumPhase > 1.0 { localHumPhase -= 1.0 }
                 localHumPhase2 += 0.3 / sr
                 if localHumPhase2 > 1.0 { localHumPhase2 -= 1.0 }
