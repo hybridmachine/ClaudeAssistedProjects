@@ -82,6 +82,11 @@ struct SettingsOverlay: View {
                 .foregroundColor(.white.opacity(0.9))
                 .tint(.purple)
 
+            Toggle("Tilt", isOn: $settings.tiltEnabled)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.9))
+                .tint(.purple)
+
             Toggle("Sound", isOn: $settings.soundEnabled)
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.9))

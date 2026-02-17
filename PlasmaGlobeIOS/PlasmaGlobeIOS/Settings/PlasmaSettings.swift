@@ -12,6 +12,7 @@ final class PlasmaSettings: ObservableObject {
     @AppStorage("soundVolume") var soundVolume: Double = 0.5
     @AppStorage("dischargeSoundStyle") var dischargeSoundStyleId: String = "crystalline_chime"
     @AppStorage("humFrequency") var humFrequency: Double = 60.0
+    @AppStorage("tiltEnabled") var tiltEnabled: Bool = true
 
     var dischargeSoundStyle: DischargeSoundStyle {
         DischargeSoundStyle.from(id: dischargeSoundStyleId)

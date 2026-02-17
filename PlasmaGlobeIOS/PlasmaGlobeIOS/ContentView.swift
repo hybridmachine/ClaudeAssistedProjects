@@ -29,6 +29,9 @@ struct ContentView: View {
                 services.motionManager.stop()
             }
         }
+        .onChange(of: settings.tiltEnabled) { enabled in
+            services.motionManager.isEnabled = enabled
+        }
         .onChange(of: settings.soundEnabled) { enabled in
             services.audioManager.setEnabled(enabled)
         }
@@ -43,6 +46,7 @@ struct ContentView: View {
         }
         .onAppear {
             touchHandler.audioManager = services.audioManager
+            services.motionManager.isEnabled = settings.tiltEnabled
             services.audioManager.setEnabled(settings.soundEnabled)
             services.audioManager.updateVolume(Float(settings.soundVolume))
             services.audioManager.setDischargeSoundStyle(settings.dischargeSoundStyle)
