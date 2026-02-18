@@ -95,7 +95,10 @@ struct MetalView: UIViewRepresentable {
             switch gesture.state {
             case .began, .changed:
                 let slots = gesture.activeTouchData(in: view)
-                touchHandler.updateTouches(slots)
+                let adjustedSlots = slots.compactMap { slot in
+                    adjustTouchForGlobe(slot, viewSize: view.bounds.size)
+                }
+                touchHandler.updateTouches(adjustedSlots)
             case .ended, .cancelled, .failed:
                 touchHandler.endAllTouches()
             default:
@@ -115,7 +118,60 @@ struct MetalView: UIViewRepresentable {
         }
 
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let location = gesture.location(in: view)
+            let normalizedX = Float(location.x / view.bounds.width)
+            let normalizedY = Float(location.y / view.bounds.height)
+            guard isTouchInGlobeZone(normalizedX: normalizedX,
+                                    normalizedY: normalizedY,
+                                    viewSize: view.bounds.size) else { return }
             touchHandler.triggerDischarge()
+        }
+
+        // MARK: - Globe Hit Testing
+
+        private func globeScreenRadius() -> Float {
+            let dist = touchHandler.cameraDistance
+            guard dist > 1.0 else { return 1000.0 }
+            return 1.6 * tan(asin(1.0 / dist))
+        }
+
+        private func isTouchInGlobeZone(normalizedX: Float, normalizedY: Float, viewSize: CGSize) -> Bool {
+            let aspect = Float(viewSize.width / viewSize.height)
+            let dx = (normalizedX - 0.5) * aspect
+            let dy = normalizedY - 0.5
+            let distance = sqrt(dx * dx + dy * dy)
+            return distance <= globeScreenRadius() * 1.15
+        }
+
+        private func adjustTouchForGlobe(_ slot: TouchSlot, viewSize: CGSize) -> TouchSlot? {
+            let aspect = Float(viewSize.width / viewSize.height)
+            let dx = (slot.position.x - 0.5) * aspect
+            let dy = slot.position.y - 0.5
+            let distance = sqrt(dx * dx + dy * dy)
+            let radius = globeScreenRadius()
+            let marginRadius = radius * 1.15
+
+            if distance <= radius {
+                // On globe: pass through unchanged
+                return slot
+            } else if distance <= marginRadius {
+                // Margin zone: project slightly inside globe edge so the shader's
+                // ray-sphere intersection succeeds (exact edge gives a tangent ray
+                // that misses due to floating-point precision)
+                let marginDepth = (distance - radius) / (radius * 0.15)
+                let forceScale: Float = 1.0 - marginDepth * 0.8
+                let safeRadius = radius * 0.95
+                let projectedX = (dx / distance * safeRadius) / aspect + 0.5
+                let projectedY = (dy / distance * safeRadius) + 0.5
+                return TouchSlot(
+                    position: SIMD2<Float>(projectedX, projectedY),
+                    force: slot.force * forceScale
+                )
+            } else {
+                // Outside margin: reject
+                return nil
+            }
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,

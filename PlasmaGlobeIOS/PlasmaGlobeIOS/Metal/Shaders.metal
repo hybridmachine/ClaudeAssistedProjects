@@ -282,11 +282,15 @@ static TendrilInfo computeTendril(int idx, float time, float realTime,
             }
         }
 
-        float attraction = pow(bestProximity, 0.6);
-        bias = mix(0.05, 0.92, attraction) + 0.08 * fract(fi * 0.37);
+        // Tendrils near the touch converge on the finger — like a real plasma globe.
+        // Influence starts at ~108°, full convergence within ~36°.
+        float localFalloff = smoothstep(0.4, 0.8, bestProximity);
+        float force = touchForces[bestTouch];
+        // Convergence is primarily proximity-driven; force modulates intensity
+        bias = localFalloff * (0.7 + 0.25 * force + 0.04 * fract(fi * 0.37));
         bias = clamp(bias, 0.0, 1.0);
         baseDir = normalize(mix(baseDir, touchDirs[bestTouch], bias));
-        forceScale = 1.0 + touchForces[bestTouch] * 0.8;
+        forceScale = 1.0 + force * 0.8 * localFalloff;
     }
 
     float3 up = abs(baseDir.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);

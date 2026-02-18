@@ -23,6 +23,9 @@ targets:
     platform: iOS
     sources:
       - PlasmaGlobeIOS
+    resources:
+      - path: PlasmaGlobeIOS/version.txt
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: PlasmaGlobeIOS/Info.plist
