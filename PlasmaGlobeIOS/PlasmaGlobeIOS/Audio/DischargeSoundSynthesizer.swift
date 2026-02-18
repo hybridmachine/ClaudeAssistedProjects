@@ -45,9 +45,10 @@ struct SingingBowlSynthesizer: DischargeSoundSynthesizer {
         let fundamental: Float = 293.0
         let wobble = 1.0 + sin(phase2 * 5.0 * 2 * .pi) * 0.003
         var sum: Float = 0
+        var envPow: Float = 1.0
         for h in 1...5 {
             let hf = Float(h)
-            let envPow = powf(envelope, hf)
+            envPow *= envelope
             sum += sin(phase * fundamental * hf * wobble * 2 * .pi) * envPow / hf
         }
         let sample = sum * 0.4

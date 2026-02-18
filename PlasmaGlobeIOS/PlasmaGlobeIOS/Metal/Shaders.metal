@@ -9,6 +9,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                                      constant Uniforms &uniforms [[buffer(0)]],
                                      constant TouchPoint *touches [[buffer(1)]],
                                      constant PlasmaConfig &config [[buffer(2)]],
+                                     constant TendrilInfo *tendrils [[buffer(3)]],
                                      texture2d<float> noiseTex [[texture(0)]]) {
 
     constexpr sampler smp(filter::linear, address::repeat);
@@ -26,38 +27,8 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
     float3 vv = cross(uu, ww);
     float3 rd = normalize(uv.x * uu + uv.y * vv + 1.6 * ww);
 
-    // Map touches to world-space directions on sphere
+    // Touch world-space directions are pre-computed on CPU and stored in TouchPoint.worldDir
     int touchCount = clamp(uniforms.touchCount, 0, MAX_TOUCHES);
-    float3 touchDirs[MAX_TOUCHES];
-    float touchForces[MAX_TOUCHES];
-    for (int t = 0; t < MAX_TOUCHES; t++) {
-        touchDirs[t] = float3(0, 0, 1);
-        touchForces[t] = 0.5;
-    }
-    for (int t = 0; t < touchCount; t++) {
-        if (touches[t].active > 0.5) {
-            float2 tuv = touches[t].position - 0.5;
-            tuv.x *= uniforms.resolution.x / uniforms.resolution.y;
-            float3 touchRd = normalize(tuv.x * uu - tuv.y * vv + 1.6 * ww);
-            float2 tHit = sphereHit(ro, touchRd, SPHERE_R);
-            if (tHit.x > 0.0) {
-                touchDirs[t] = normalize(ro + touchRd * tHit.x);
-            }
-            touchForces[t] = touches[t].force;
-        }
-    }
-
-    // Apply gyro tilt sway to touch directions
-    float2 tilt = uniforms.gyroTilt;
-    float3 tiltOffset = float3(tilt.x, 0.0, tilt.y) * 0.15;
-
-    // Pre-compute tendril data
-    TendrilInfo tendrils[MAX_TENDRILS];
-    for (int j = 0; j < numTendrils; j++) {
-        tendrils[j] = computeTendril(j, time, uniforms.time, touchDirs, touchForces, touchCount, config.speed, config.respawnRate);
-        // Subtle sway from device tilt
-        tendrils[j].dir = normalize(tendrils[j].dir + tiltOffset);
-    }
 
     float3 color = float3(0.0);
     float2 hit = sphereHit(ro, rd, SPHERE_R);
@@ -67,8 +38,24 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
         float pathLen = hit.y - hit.x;
         float3 normal = normalize(entry);
 
-        // === Center post ===
-        PostResult postHit = profiledPostHit(ro, rd);
+        // === Center post (with screen-space early rejection) ===
+        PostResult postHit;
+        postHit.t = -1.0;
+        postHit.normal = float3(0.0);
+        // Cheap perpendicular distance from ray to y-axis
+        float2 roXZ = float2(ro.x, ro.z);
+        float2 rdXZ = float2(rd.x, rd.z);
+        float rdXZLen2 = dot(rdXZ, rdXZ);
+        float minDistToAxis;
+        if (rdXZLen2 > 1e-12) {
+            float cross2d = roXZ.x * rdXZ.y - roXZ.y * rdXZ.x;
+            minDistToAxis = abs(cross2d) * fast::rsqrt(rdXZLen2);
+        } else {
+            minDistToAxis = length(roXZ);
+        }
+        if (minDistToAxis < POST_RADIUS_MAX + ELECTRODE_R + 0.05) {
+            postHit = profiledPostHit(ro, rd);
+        }
         bool hitPost = (postHit.t > 0.0 && postHit.t >= hit.x && postHit.t <= hit.y);
         float3 postColor = float3(0.0);
 
@@ -82,8 +69,8 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             float3 baseMetalColor = float3(0.04, 0.04, 0.05);
             float diff = max(dot(postNorm, lightDir), 0.0) * 0.3;
             float diff2 = max(dot(postNorm, lightDir2), 0.0) * 0.15;
-            float spec = pow(max(dot(reflect(rd, postNorm), lightDir), 0.0), 60.0);
-            float spec2 = pow(max(dot(reflect(rd, postNorm), lightDir2), 0.0), 40.0);
+            float spec = fastPow(max(dot(reflect(rd, postNorm), lightDir), 0.0), 60.0);
+            float spec2 = fastPow(max(dot(reflect(rd, postNorm), lightDir2), 0.0), 40.0);
 
             postColor = baseMetalColor + float3(0.08, 0.08, 0.1) * (diff + diff2)
                        + float3(0.25, 0.25, 0.35) * spec * 0.4
@@ -97,17 +84,19 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             postColor += electrodeColor * topProximity * 1.2;
             // Hot-spot at dome apex
             float3 upDir = float3(0.0, 1.0, 0.0);
-            float hotSpot = pow(max(dot(postHit.normal, upDir), 0.0), 3.0) * 0.8;
+            float hotBase = max(dot(postHit.normal, upDir), 0.0);
+            float hotSpot = hotBase * hotBase * hotBase * 0.8;
             postColor += electrodeColor * hotSpot;
         }
 
         // === Glass shell ===
-        float fresnel = pow(1.0 - abs(dot(rd, normal)), 3.0);
+        float fresnelBase = 1.0 - abs(dot(rd, normal));
+        float fresnel = fresnelBase * fresnelBase * fresnelBase;
         float3 shellColor = config.shellTint.rgb * fresnel;
 
         float3 lightDir = normalize(float3(0.5, 1.0, 0.8));
-        float spec = pow(max(dot(reflect(rd, normal), lightDir), 0.0), 40.0);
-        shellColor += float3(0.2, 0.22, 0.3) * spec * 0.25;
+        float shellSpec = fastPow(max(dot(reflect(rd, normal), lightDir), 0.0), 40.0);
+        shellColor += float3(0.2, 0.22, 0.3) * shellSpec * 0.25;
 
         // === Volumetric plasma tendrils ===
         half3 plasma = half3(0.0h);
@@ -145,20 +134,24 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 float dispAmt = max(along, 0.0) * 0.22;
                 float3 noiseDisp = (tRight * nx1 + tFwd * ny1) * dispAmt;
 
-                if (along > 0.15) {
-                    float3 np2 = float3(along * 7.0, fj * 23.1 + time * 0.5, fj * 17.3);
-                    float nx2 = tnoise(np2, noiseTex, smp) - 0.5;
-                    float ny2 = tnoise(np2 + float3(197, 0, 0), noiseTex, smp) - 0.5;
-                    noiseDisp += (tRight * nx2 + tFwd * ny2) * dispAmt * 0.3;
-                }
+                // LOD: skip secondary/ridged noise for back half of ray-march
+                float lodFade = smoothstep(float(stepCount) * 0.4, float(stepCount) * 0.6, float(i));
+                if (lodFade < 0.5) {
+                    if (along > 0.15) {
+                        float3 np2 = float3(along * 7.0, fj * 23.1 + time * 0.5, fj * 17.3);
+                        float nx2 = tnoise(np2, noiseTex, smp) - 0.5;
+                        float ny2 = tnoise(np2 + float3(197, 0, 0), noiseTex, smp) - 0.5;
+                        noiseDisp += (tRight * nx2 + tFwd * ny2) * dispAmt * 0.3;
+                    }
 
-                // Ridged noise for angular kinks in outer half
-                if (along > 0.4) {
-                    float3 np3 = float3(along * 14.0, fj * 31.7 + time * 0.7, fj * 21.9);
-                    float rx = abs(tnoise(np3, noiseTex, smp) - 0.5);
-                    float ry = abs(tnoise(np3 + float3(293, 0, 0), noiseTex, smp) - 0.5);
-                    float kinkAmt = smoothstep(0.4, 0.7, along) * 0.15;
-                    noiseDisp += (tRight * (rx * rx) + tFwd * (ry * ry)) * kinkAmt;
+                    // Ridged noise for angular kinks in outer half
+                    if (along > 0.4) {
+                        float3 np3 = float3(along * 14.0, fj * 31.7 + time * 0.7, fj * 21.9);
+                        float rx = abs(tnoise(np3, noiseTex, smp) - 0.5);
+                        float ry = abs(tnoise(np3 + float3(293, 0, 0), noiseTex, smp) - 0.5);
+                        float kinkAmt = smoothstep(0.4, 0.7, along) * 0.15;
+                        noiseDisp += (tRight * (rx * rx) + tFwd * (ry * ry)) * kinkAmt;
+                    }
                 }
 
                 float dist = length(perp - noiseDisp);
@@ -237,7 +230,9 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
 
             plasma += stepCol * half(dt);
 
-            if (dot(plasma, plasma) > 9.0h) break;
+            // Early exits: mid-ray bailout if no contribution yet, saturation exit
+            if (i == stepCount / 2 && dot(plasma, plasma) < 0.001h) break;
+            if (dot(plasma, plasma) > 4.0h) break;
         }
 
         // === Per-tendril glass termination glow ===
@@ -247,8 +242,8 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             float3 glassPoint = normalize(tDir) * SPHERE_R;
             float3 glassNormal = normalize(glassPoint);
             float surfaceDot = max(dot(normal, glassNormal), 0.0);
-            half tightSpot = half(pow(surfaceDot, 60.0) * 0.1);
-            half wideHalo = half(pow(surfaceDot, 12.0) * 0.010);
+            half tightSpot = half(fastPow(surfaceDot, 60.0) * 0.1);
+            half wideHalo = half(fastPow(surfaceDot, 12.0) * 0.010);
             half3 spotColor = half3(0.9h, 0.92h, 1.0h) * tightSpot;
             half3 haloBase = config.rainbowMode != 0
                 ? rainbowColor(tendrils[j].colorSeed)
@@ -318,10 +313,10 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
         // === Touch contact glow ===
         for (int t = 0; t < touchCount; t++) {
             if (touches[t].active > 0.5) {
-                float surfaceDot = dot(normal, touchDirs[t]);
-                float contactForce = touchForces[t];
-                float contactGlow = pow(max(surfaceDot, 0.0), 80.0) * 2.5 * (1.0 + contactForce * 0.5);
-                float contactHalo = pow(max(surfaceDot, 0.0), 15.0) * 0.4 * (1.0 + contactForce * 0.3);
+                float surfaceDot = dot(normal, touches[t].worldDir);
+                float contactForce = touches[t].force;
+                float contactGlow = fastPow(max(surfaceDot, 0.0), 80.0) * 2.5 * (1.0 + contactForce * 0.5);
+                float contactHalo = fastPow(max(surfaceDot, 0.0), 15.0) * 0.4 * (1.0 + contactForce * 0.3);
                 float3 contactGlowColor = config.rainbowMode != 0
                     ? float3(0.95, 0.95, 1.0) : config.contactColor.rgb;
                 float3 contactHaloColor = config.rainbowMode != 0
@@ -338,7 +333,9 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             color += postColor;
         }
 
-        float rim = pow(1.0 - abs(dot(rd, normal)), 4.0);
+        float rimBase = 1.0 - abs(dot(rd, normal));
+        float rimBase2 = rimBase * rimBase;
+        float rim = rimBase2 * rimBase2;
         color += config.shellTint.rgb * rim * 2.0;
     }
 

@@ -14,6 +14,29 @@ struct TouchPoint {
     var position: SIMD2<Float> = .zero
     var force: Float = 0.0
     var active: Float = 0.0
+    var worldDir: SIMD3<Float> = .init(0, 0, 1)
+    var _pad: Float = 0
+}
+
+struct TendrilInfoCPU {
+    var dir: SIMD3<Float> = .zero
+    var _pad0: Float = 0
+    var right: SIMD3<Float> = .zero
+    var _pad1: Float = 0
+    var fwd: SIMD3<Float> = .zero
+    var _pad2: Float = 0
+    var touchBias: Float = 0
+    var forceScale: Float = 1
+    var forkPoint: Float = 0.5
+    var _pad3: Float = 0
+    var branchOffset1: SIMD3<Float> = .zero
+    var _pad4: Float = 0
+    var branchOffset2: SIMD3<Float> = .zero
+    var _pad5: Float = 0
+    var branchCount: Int32 = 1
+    var flicker: Float = 1
+    var colorSeed: Float = 0
+    var _pad6: Float = 0
 }
 
 let maxTouchSlots = 5

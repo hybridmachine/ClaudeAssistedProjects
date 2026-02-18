@@ -52,27 +52,29 @@ PlasmaGlobeIOS/
 ```
 
 ## Rendering Architecture
-Two-pass fullscreen Metal pipeline with three Metal buffers:
+Two-pass fullscreen Metal pipeline with four Metal buffers:
 
 - **Buffer 0 — `Uniforms`**: time, resolution, camera, touchCount, dischargeTime, gyroTilt
-- **Buffer 1 — `TouchPoint[5]`**: position, force, active for each multi-touch slot
+- **Buffer 1 — `TouchPoint[5]`**: position, force, active, worldDir (pre-computed on CPU) for each multi-touch slot
 - **Buffer 2 — `PlasmaConfig`**: 6 color vectors + tendrilCount, brightness, speed, thickness
+- **Buffer 3 — `TendrilInfo[20]`**: pre-computed per-frame tendril data (direction, basis vectors, touch bias, branching, flicker) — computed on CPU to avoid redundant per-pixel transcendental math
 
 ### Passes
 1. **Pass 1 — Starfield:** Clears to dark background, renders multi-layer parallax stars and procedural galaxy patches with gyroscope-driven depth parallax.
-2. **Pass 2 — Plasma Globe:** Additive blend over starfield. Ray-marches up to 20 tendrils with configurable colors from PlasmaConfig, force-modulated width/brightness, branching forks, discharge flash (8 lightning tendrils), glass shell, and center post.
+2. **Pass 2 — Plasma Globe:** Additive blend over starfield. Ray-marches up to 20 tendrils with configurable colors from PlasmaConfig, force-modulated width/brightness, branching forks, discharge flash (8 lightning tendrils), glass shell, and center post. Tendril data and touch world-directions are pre-computed on CPU each frame.
 
 ## Touch Interaction Flow
 1. `MetalView` registers a `MultiTouchGestureRecognizer` (up to 5 touches) + pinch + double-tap
 2. Each touch tracked by identity, normalized to `[0, 1]`, force read from `UITouch.force`
-3. Shader maps each touch to 3D direction via ray-sphere intersection
-4. Each tendril attracts toward its nearest active touch, force modulates width (+50%) and brightness (+80%)
-5. Double-tap triggers discharge flash (1.5s lightning burst with haptic + sound)
+3. CPU (PlasmaRenderer) maps each touch to 3D direction via ray-sphere intersection, stored in `TouchPoint.worldDir`
+4. CPU pre-computes all `TendrilInfo` structs (direction, touch attraction, lifecycle, branching)
+5. Each tendril attracts toward its nearest active touch, force modulates width (+50%) and brightness (+80%)
+6. Double-tap triggers discharge flash (1.5s lightning burst with haptic + sound)
 
-## Key Shader Constants (Shaders.metal)
+## Key Shader Constants (PlasmaCommon.h)
 - `MAX_TENDRILS = 20` — maximum plasma arm count (runtime via config.tendrilCount)
 - `MAX_TOUCHES = 5` — multi-touch slots
-- `VOL_STEPS = 28` — ray-march sample count
+- `VOL_STEPS = 32` — ray-march sample count
 - `SPHERE_R = 1.0` — globe radius
 - `CORE_R = 0.06` — central electrode radius
 - `POST_RADIUS_MAX = 0.095` — center post bounding cylinder radius
@@ -92,7 +94,7 @@ open PlasmaGlobeIOS.xcodeproj
 ## Conventions
 - Folder-based code organization: `Rendering/`, `Metal/`, `Interaction/`, `Audio/`, `Settings/`
 - All animation is time-driven (`CFAbsoluteTime`), no state machines
-- Shader functions are pure math — `tnoise`, `sphereHit`, `computeTendril`
+- Shader functions are pure math — `tnoise`, `sphereHit`, `fastPow`; tendril computation is on CPU (`PlasmaRenderer.computeTendrilInfo`)
 - Coordinates normalized to `[0, 1]` or `[-1, 1]` consistently
 - Settings persisted via `@AppStorage` — survive app kill/relaunch
 - Audio is fully procedural (AVAudioSourceNode) — no asset files

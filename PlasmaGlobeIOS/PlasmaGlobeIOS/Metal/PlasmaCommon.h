@@ -25,6 +25,8 @@ struct TouchPoint {
     float2 position;
     float force;
     float active;
+    float3 worldDir;
+    float _padTP;
 };
 
 struct PlasmaConfig {
@@ -46,7 +48,7 @@ struct PlasmaConfig {
 
 constant int MAX_TENDRILS = 20;
 constant int MAX_TOUCHES = 5;
-constant int VOL_STEPS = 40;
+constant int VOL_STEPS = 32;
 constant float SPHERE_R = 1.0;
 constant float CORE_R = 0.06;
 constant float POST_RADIUS_MAX = 0.095;
@@ -75,6 +77,10 @@ static float2 sphereHit(float3 ro, float3 rd, float r) {
     if (h < 0.0) return float2(-1.0);
     h = sqrt(h);
     return float2(-b - h, -b + h);
+}
+
+static float fastPow(float x, float n) {
+    return fast::exp2(n * fast::log2(max(x, 1e-10)));
 }
 
 // === Profiled center post ===
@@ -189,17 +195,21 @@ static PostResult profiledPostHit(float3 ro, float3 rd) {
     if (tEntry >= tExit) return result;
 
     float t = tEntry;
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 10; i++) {
         float3 p = ro + rd * t;
         float d = postSDF(p);
         if (d < 0.001) {
             result.t = t;
+            // Tetrahedron normal: 4 SDF samples instead of 6
             float eps = 0.001;
-            float3 n = float3(
-                postSDF(p + float3(eps, 0, 0)) - postSDF(p - float3(eps, 0, 0)),
-                postSDF(p + float3(0, eps, 0)) - postSDF(p - float3(0, eps, 0)),
-                postSDF(p + float3(0, 0, eps)) - postSDF(p - float3(0, 0, eps))
-            );
+            float3 e1 = float3( 1, -1, -1);
+            float3 e2 = float3(-1, -1,  1);
+            float3 e3 = float3(-1,  1, -1);
+            float3 e4 = float3( 1,  1,  1);
+            float3 n = e1 * postSDF(p + e1 * eps)
+                     + e2 * postSDF(p + e2 * eps)
+                     + e3 * postSDF(p + e3 * eps)
+                     + e4 * postSDF(p + e4 * eps);
             result.normal = normalize(n);
             return result;
         }
@@ -214,117 +224,27 @@ static PostResult profiledPostHit(float3 ro, float3 rd) {
 
 struct TendrilInfo {
     float3 dir;
+    float _pad0;
     float3 right;
+    float _pad1;
     float3 fwd;
+    float _pad2;
     float touchBias;
     float forceScale;
     float forkPoint;
+    float _pad3;
     float3 branchOffset1;
+    float _pad4;
     float3 branchOffset2;
+    float _pad5;
     int branchCount;
     float flicker;
     float colorSeed;
+    float _pad6;
 };
 
-static TendrilInfo computeTendril(int idx, float time, float realTime,
-                                   thread float3 *touchDirs, thread float *touchForces,
-                                   int touchCount, float speed, float respawnRate) {
-    float fi = float(idx);
-
-    // Lifecycle: each tendril lives 3-7 real seconds then respawns at a new position
-    float lifeHash = fract(fi * 0.5281 + 0.321);
-    float phaseHash = fract(fi * 0.8713 + 0.654);
-    float period = (3.0 + lifeHash * 4.0) / max(respawnRate, 0.1);
-    float lifecycleTime = realTime + phaseHash * period;
-    float generation = floor(lifecycleTime / period);
-    float timeInCycle = fract(lifecycleTime / period) * period;
-
-    // Per-generation random offsets so the tendril respawns at a new position each cycle
-    float genTheta = fract(sin(generation * 127.1 + fi * 311.7) * 43758.5453) * 6.2832;
-    float genPhi = fract(sin(generation * 269.5 + fi * 183.3) * 43758.5453);
-    float genSeed = generation * 7.31;
-
-    // Organic meandering around spawn position (no continuous orbit)
-    float wanderTheta = sin(time * 0.17 * speed + fi * 2.3 + genSeed) * 0.25
-                      + sin(time * 0.11 * speed + fi * 4.1 + genSeed * 1.7) * 0.15
-                      + sin(time * 0.07 * speed + fi * 6.7 + genSeed * 2.3) * 0.08;
-    float theta = fi * 2.39996 + genTheta + wanderTheta;
-
-    // Slow upward drift over lifecycle + vertical meandering
-    float lifecycleProgress = timeInCycle / period;
-    float upwardDrift = lifecycleProgress * 0.35;
-
-    float wanderPhi = sin(time * 0.13 * speed + fi * 3.7 + genSeed * 1.3) * 0.08
-                    + sin(time * 0.09 * speed + fi * 5.3 + genSeed * 2.1) * 0.05;
-
-    float cosArg = clamp(1.0 - 2.0 * genPhi + upwardDrift + wanderPhi, -1.0, 1.0);
-    float phi = acos(cosArg);
-
-    float3 baseDir = normalize(float3(
-        sin(phi) * cos(theta),
-        cos(phi),
-        sin(phi) * sin(theta)
-    ));
-
-    float bias = 0.0;
-    float forceScale = 1.0;
-
-    if (touchCount > 0) {
-        // Find nearest touch
-        float bestProximity = -1.0;
-        int bestTouch = 0;
-        for (int t = 0; t < touchCount && t < MAX_TOUCHES; t++) {
-            float angularDist = acos(clamp(dot(baseDir, touchDirs[t]), -1.0, 1.0)) / M_PI_F;
-            float proximity = 1.0 - angularDist;
-            if (proximity > bestProximity) {
-                bestProximity = proximity;
-                bestTouch = t;
-            }
-        }
-
-        // Tendrils near the touch converge on the finger — like a real plasma globe.
-        // Influence starts at ~108°, full convergence within ~36°.
-        float localFalloff = smoothstep(0.4, 0.8, bestProximity);
-        float force = touchForces[bestTouch];
-        // Convergence is primarily proximity-driven; force modulates intensity
-        bias = localFalloff * (0.7 + 0.25 * force + 0.04 * fract(fi * 0.37));
-        bias = clamp(bias, 0.0, 1.0);
-        baseDir = normalize(mix(baseDir, touchDirs[bestTouch], bias));
-        forceScale = 1.0 + force * 0.8 * localFalloff;
-    }
-
-    float3 up = abs(baseDir.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);
-    float3 rt = normalize(cross(baseDir, up));
-    float3 fw = cross(rt, baseDir);
-
-    float hash1 = fract(fi * 0.7631 + 0.123 + genSeed);
-    float hash2 = fract(fi * 0.4519 + 0.789 + genSeed);
-    float hash3 = fract(fi * 0.9137 + 0.456 + genSeed);
-
-    TendrilInfo info;
-    info.dir = baseDir;
-    info.right = rt;
-    info.fwd = fw;
-    info.touchBias = bias;
-    info.forceScale = forceScale;
-    info.forkPoint = 0.3 + hash1 * 0.3;
-
-    float angle1 = hash2 * M_PI_F * 2.0 + time * 0.05 * speed;
-    info.branchOffset1 = normalize(rt * cos(angle1) + fw * sin(angle1));
-    float angle2 = angle1 + M_PI_F * 0.6 + hash3 * 0.4;
-    info.branchOffset2 = normalize(rt * cos(angle2) + fw * sin(angle2));
-    info.branchCount = (hash3 > 0.4) ? 2 : 1;
-
-    // Lifecycle fade: quick fade in/out at lifecycle boundaries
-    float fadeIn = smoothstep(0.0, 0.2, timeInCycle);
-    float fadeOut = smoothstep(0.0, 0.2, period - timeInCycle);
-    info.flicker = fadeIn * fadeOut;
-
-    // Per-tendril color seed for rainbow mode (changes each generation)
-    info.colorSeed = fract(sin(generation * 53.7 + fi * 97.3) * 43758.5453);
-
-    return info;
-}
+// computeTendril() has been moved to CPU (PlasmaRenderer.swift) for performance.
+// Tendrils are pre-computed once per frame and passed via buffer(3).
 
 // === Branch contribution helper ===
 
