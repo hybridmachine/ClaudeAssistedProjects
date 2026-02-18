@@ -1,20 +1,4 @@
-#include <metal_stdlib>
-using namespace metal;
-
-struct VertexOut {
-    float4 position [[position]];
-    float2 uv;
-};
-
-struct Uniforms {
-    float time;
-    float2 resolution;
-    float cameraDistance;
-    float cameraTime;
-    int touchCount;
-    float dischargeTime;
-    float2 gyroTilt;
-};
+#include "PlasmaCommon.h"
 
 // Hash function for pseudo-random star placement
 static float hash21(float2 p) {

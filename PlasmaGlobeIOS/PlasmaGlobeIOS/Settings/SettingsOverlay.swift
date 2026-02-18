@@ -47,20 +47,7 @@ struct SettingsOverlay: View {
         VStack(spacing: 0) {
         VStack(spacing: 16) {
             // Theme picker
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Theme")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(ColorTheme.allThemes) { theme in
-                            themeButton(theme)
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                }
-            }
+            ThemePickerSection(settings: settings, onInteraction: resetHideTimer)
 
             Divider().background(Color.white.opacity(0.2))
 
@@ -81,19 +68,13 @@ struct SettingsOverlay: View {
 
             // Toggles
             Toggle("Haptics", isOn: $settings.hapticsEnabled)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.9))
-                .tint(.purple)
+                .plasmaToggleStyle()
 
             Toggle("Tilt", isOn: $settings.tiltEnabled)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.9))
-                .tint(.purple)
+                .plasmaToggleStyle()
 
             Toggle("Sound", isOn: $settings.soundEnabled)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.9))
-                .tint(.purple)
+                .plasmaToggleStyle()
 
             if settings.soundEnabled {
                 settingsSlider(label: "Volume", value: $settings.soundVolume, range: 0...1)
@@ -137,68 +118,6 @@ struct SettingsOverlay: View {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }()
 
-    private static let rainbowPreviewColors: [Color] = [
-        Color(red: 1.0, green: 0.2, blue: 0.15),
-        Color(red: 1.0, green: 0.55, blue: 0.1),
-        Color(red: 1.0, green: 0.85, blue: 0.1),
-        Color(red: 0.2, green: 0.9, blue: 0.3),
-        Color(red: 0.1, green: 0.8, blue: 0.8),
-        Color(red: 0.2, green: 0.4, blue: 1.0),
-        Color(red: 0.45, green: 0.2, blue: 0.95),
-        Color(red: 0.9, green: 0.2, blue: 0.7),
-        Color(red: 1.0, green: 0.2, blue: 0.15) // wrap back to red
-    ]
-
-    private func themeButton(_ theme: ColorTheme) -> some View {
-        let colors = theme.previewColors
-        let isSelected = settings.selectedThemeId == theme.id
-
-        return Button {
-            settings.selectedThemeId = theme.id
-            resetHideTimer()
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    if theme.isRainbow {
-                        Circle()
-                            .fill(
-                                AngularGradient(
-                                    colors: Self.rainbowPreviewColors,
-                                    center: .center
-                                )
-                            )
-                            .frame(width: 36, height: 36)
-                    } else {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: Double(colors.0.x), green: Double(colors.0.y), blue: Double(colors.0.z)),
-                                        Color(red: Double(colors.1.x), green: Double(colors.1.y), blue: Double(colors.1.z))
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 36, height: 36)
-                    }
-
-                    if isSelected {
-                        Circle()
-                            .strokeBorder(Color.white, lineWidth: 2)
-                            .frame(width: 40, height: 40)
-                    }
-                }
-
-                Text(theme.name)
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.8))
-                    .lineLimit(1)
-            }
-            .frame(width: 52)
-        }
-    }
-
     private func settingsSlider<V: View>(
         label: String,
         value: Binding<Double>,
@@ -239,5 +158,20 @@ struct SettingsOverlay: View {
                 isVisible = false
             }
         }
+    }
+}
+
+private struct PlasmaToggleStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.caption)
+            .foregroundColor(.white.opacity(0.9))
+            .tint(.purple)
+    }
+}
+
+extension View {
+    func plasmaToggleStyle() -> some View {
+        modifier(PlasmaToggleStyle())
     }
 }

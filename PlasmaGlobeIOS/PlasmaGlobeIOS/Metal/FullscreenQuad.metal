@@ -1,10 +1,4 @@
-#include <metal_stdlib>
-using namespace metal;
-
-struct VertexOut {
-    float4 position [[position]];
-    float2 uv;
-};
+#include "PlasmaCommon.h"
 
 vertex VertexOut fullscreenQuadVertex(uint vid [[vertex_id]]) {
     // Two-triangle fullscreen quad

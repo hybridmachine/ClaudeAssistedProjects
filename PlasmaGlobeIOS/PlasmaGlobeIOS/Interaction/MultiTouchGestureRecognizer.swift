@@ -37,21 +37,16 @@ final class MultiTouchGestureRecognizer: UIGestureRecognizer {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-        trackedTouches.removeAll { touches.contains($0) }
-        if trackedTouches.isEmpty {
-            state = .ended
-        } else {
-            state = .changed
-        }
+        removeTouches(touches, terminalState: .ended)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        removeTouches(touches, terminalState: .cancelled)
+    }
+
+    private func removeTouches(_ touches: Set<UITouch>, terminalState: UIGestureRecognizer.State) {
         trackedTouches.removeAll { touches.contains($0) }
-        if trackedTouches.isEmpty {
-            state = .cancelled
-        } else {
-            state = .changed
-        }
+        state = trackedTouches.isEmpty ? terminalState : .changed
     }
 
     override func reset() {
