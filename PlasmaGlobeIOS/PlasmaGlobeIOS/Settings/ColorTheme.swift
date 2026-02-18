@@ -9,6 +9,23 @@ struct ColorTheme: Identifiable {
     let glowColorB: SIMD4<Float>
     let shellTint: SIMD4<Float>
     let contactColor: SIMD4<Float>
+    let isRainbow: Bool
+
+    init(id: String, name: String,
+         coreColorA: SIMD4<Float>, coreColorB: SIMD4<Float>,
+         glowColorA: SIMD4<Float>, glowColorB: SIMD4<Float>,
+         shellTint: SIMD4<Float>, contactColor: SIMD4<Float>,
+         isRainbow: Bool = false) {
+        self.id = id
+        self.name = name
+        self.coreColorA = coreColorA
+        self.coreColorB = coreColorB
+        self.glowColorA = glowColorA
+        self.glowColorB = glowColorB
+        self.shellTint = shellTint
+        self.contactColor = contactColor
+        self.isRainbow = isRainbow
+    }
 
     func toPlasmaConfig(tendrilCount: Int32, brightness: Float, speed: Float, thickness: Float, respawnRate: Float) -> PlasmaConfig {
         PlasmaConfig(
@@ -22,7 +39,8 @@ struct ColorTheme: Identifiable {
             brightness: brightness,
             speed: speed,
             tendrilThickness: thickness,
-            respawnRate: respawnRate
+            respawnRate: respawnRate,
+            rainbowMode: isRainbow ? 1 : 0
         )
     }
 
@@ -35,7 +53,7 @@ struct ColorTheme: Identifiable {
 
 extension ColorTheme {
     static let allThemes: [ColorTheme] = [
-        classicPink, classicPurple, electricGreen, fieryRed, iceBlue, solarFlare, void
+        classicPink, classicPurple, electricGreen, fieryRed, iceBlue, solarFlare, void, rainbow
     ]
 
     static let classicPink = ColorTheme(
@@ -113,5 +131,17 @@ extension ColorTheme {
         glowColorB: SIMD4<Float>(0.08, 0.08, 0.15, 1.0),
         shellTint: SIMD4<Float>(0.03, 0.03, 0.05, 1.0),
         contactColor: SIMD4<Float>(0.7, 0.7, 0.8, 1.0)
+    )
+
+    static let rainbow = ColorTheme(
+        id: "rainbow",
+        name: "Rainbow",
+        coreColorA: SIMD4<Float>(0.9, 0.9, 1.0, 1.0),
+        coreColorB: SIMD4<Float>(0.85, 0.85, 1.0, 1.0),
+        glowColorA: SIMD4<Float>(0.5, 0.3, 0.8, 1.0),
+        glowColorB: SIMD4<Float>(0.3, 0.5, 0.9, 1.0),
+        shellTint: SIMD4<Float>(0.04, 0.04, 0.08, 1.0),
+        contactColor: SIMD4<Float>(0.95, 0.95, 1.0, 1.0),
+        isRainbow: true
     )
 }

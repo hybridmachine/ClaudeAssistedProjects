@@ -30,4 +30,5 @@ struct PlasmaConfig {
     var speed: Float = 1.0
     var tendrilThickness: Float = 1.0
     var respawnRate: Float = 1.0
+    var rainbowMode: Int32 = 0
 }

@@ -121,6 +121,18 @@ struct SettingsOverlay: View {
         .padding(.horizontal, 16)
     }
 
+    private static let rainbowPreviewColors: [Color] = [
+        Color(red: 1.0, green: 0.2, blue: 0.15),
+        Color(red: 1.0, green: 0.55, blue: 0.1),
+        Color(red: 1.0, green: 0.85, blue: 0.1),
+        Color(red: 0.2, green: 0.9, blue: 0.3),
+        Color(red: 0.1, green: 0.8, blue: 0.8),
+        Color(red: 0.2, green: 0.4, blue: 1.0),
+        Color(red: 0.45, green: 0.2, blue: 0.95),
+        Color(red: 0.9, green: 0.2, blue: 0.7),
+        Color(red: 1.0, green: 0.2, blue: 0.15) // wrap back to red
+    ]
+
     private func themeButton(_ theme: ColorTheme) -> some View {
         let colors = theme.previewColors
         let isSelected = settings.selectedThemeId == theme.id
@@ -131,18 +143,29 @@ struct SettingsOverlay: View {
         } label: {
             VStack(spacing: 4) {
                 ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: Double(colors.0.x), green: Double(colors.0.y), blue: Double(colors.0.z)),
-                                    Color(red: Double(colors.1.x), green: Double(colors.1.y), blue: Double(colors.1.z))
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                    if theme.isRainbow {
+                        Circle()
+                            .fill(
+                                AngularGradient(
+                                    colors: Self.rainbowPreviewColors,
+                                    center: .center
+                                )
                             )
-                        )
-                        .frame(width: 36, height: 36)
+                            .frame(width: 36, height: 36)
+                    } else {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: Double(colors.0.x), green: Double(colors.0.y), blue: Double(colors.0.z)),
+                                        Color(red: Double(colors.1.x), green: Double(colors.1.y), blue: Double(colors.1.z))
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 36, height: 36)
+                    }
 
                     if isSelected {
                         Circle()
