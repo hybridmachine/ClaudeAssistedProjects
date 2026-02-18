@@ -44,6 +44,7 @@ struct SettingsOverlay: View {
     }
 
     private var settingsPanel: some View {
+        VStack(spacing: 0) {
         VStack(spacing: 16) {
             // Theme picker
             VStack(alignment: .leading, spacing: 8) {
@@ -119,7 +120,22 @@ struct SettingsOverlay: View {
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 16)
+
+        Text("v\(Self.appVersion)")
+            .font(.system(size: 30))
+            .foregroundColor(.white.opacity(0.3))
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 8)
+        }
     }
+
+    private static let appVersion: String = {
+        guard let url = Bundle.main.url(forResource: "version", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return "unknown"
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }()
 
     private static let rainbowPreviewColors: [Color] = [
         Color(red: 1.0, green: 0.2, blue: 0.15),
