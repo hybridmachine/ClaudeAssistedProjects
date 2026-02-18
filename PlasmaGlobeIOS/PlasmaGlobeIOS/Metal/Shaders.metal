@@ -39,6 +39,7 @@ struct PlasmaConfig {
     float speed;
     float tendrilThickness;
     float respawnRate;
+    int rainbowMode;
 };
 
 constant int MAX_TENDRILS = 20;
@@ -222,6 +223,7 @@ struct TendrilInfo {
     float3 branchOffset2;
     int branchCount;
     float flicker;
+    float colorSeed;
 };
 
 static TendrilInfo computeTendril(int idx, float time, float realTime,
@@ -314,7 +316,28 @@ static TendrilInfo computeTendril(int idx, float time, float realTime,
     float fadeOut = smoothstep(0.0, 0.2, period - timeInCycle);
     info.flicker = fadeIn * fadeOut;
 
+    // Per-tendril color seed for rainbow mode (changes each generation)
+    info.colorSeed = fract(sin(generation * 53.7 + fi * 97.3) * 43758.5453);
+
     return info;
+}
+
+// --- Rainbow palette (8 bright colors) ---
+
+constant half3 RAINBOW_PALETTE[8] = {
+    half3(1.0h, 0.2h, 0.15h),   // Red
+    half3(1.0h, 0.55h, 0.1h),   // Orange
+    half3(1.0h, 0.85h, 0.1h),   // Yellow
+    half3(0.2h, 0.9h, 0.3h),    // Green
+    half3(0.1h, 0.8h, 0.8h),    // Teal
+    half3(0.2h, 0.4h, 1.0h),    // Blue
+    half3(0.45h, 0.2h, 0.95h),  // Indigo
+    half3(0.9h, 0.2h, 0.7h)     // Magenta
+};
+
+static half3 rainbowColor(float seed) {
+    int idx = int(seed * 8.0) % 8;
+    return RAINBOW_PALETTE[idx];
 }
 
 fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
@@ -403,7 +426,9 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
 
             float3 postPoint = ro + rd * postHit.t;
             float topProximity = smoothstep(-0.15, 0.05, postPoint.y);
-            float3 electrodeColor = mix(config.glowColorB.rgb, float3(1.0), 0.3);
+            float3 electrodeColor = config.rainbowMode != 0
+                ? mix(float3(0.9, 0.9, 1.0), float3(1.0), 0.3)
+                : mix(config.glowColorB.rgb, float3(1.0), 0.3);
             postColor += electrodeColor * topProximity * 1.2;
             // Hot-spot at dome apex
             float3 upDir = float3(0.0, 1.0, 0.0);
@@ -493,8 +518,15 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 float t = saturate((along - CORE_R) / (SPHERE_R - CORE_R));
                 half midBlend = half(smoothstep(0.0, 0.35, t) - smoothstep(0.65, 1.0, t));
 
-                half3 themeCore = mix(half3(config.coreColorA.rgb), half3(config.coreColorB.rgb), midBlend);
-                half3 glowColor = mix(half3(config.glowColorA.rgb), half3(config.glowColorB.rgb), midBlend);
+                half3 themeCore, glowColor;
+                if (config.rainbowMode != 0) {
+                    half3 palColor = rainbowColor(tendrils[j].colorSeed);
+                    themeCore = mix(palColor, half3(1.0h), 0.55h);
+                    glowColor = palColor;
+                } else {
+                    themeCore = mix(half3(config.coreColorA.rgb), half3(config.coreColorB.rgb), midBlend);
+                    glowColor = mix(half3(config.glowColorA.rgb), half3(config.glowColorB.rgb), midBlend);
+                }
                 half3 whiteCore = mix(mix(themeCore, half3(1.0h), 0.85h), half3(0.9h, 0.92h, 1.0h), 0.3h);
 
                 half transW = half((coreW + glowW) * 0.5);
@@ -540,9 +572,14 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             half3 stepCol = totalColor;
 
             half cg = half(fast::exp(-r * 10.0)) * 5.0h;
-            stepCol += half3(config.coreColorB.rgb) * cg;
+            half3 coreGlowColor = config.rainbowMode != 0
+                ? half3(0.9h, 0.9h, 1.0h)
+                : half3(config.coreColorB.rgb);
+            stepCol += coreGlowColor * cg;
             // Soft ambient fill using average glow color
-            half3 ambientColor = (half3(config.glowColorA.rgb) + half3(config.glowColorB.rgb)) * 0.5h;
+            half3 ambientColor = config.rainbowMode != 0
+                ? half3(0.15h, 0.15h, 0.2h)
+                : (half3(config.glowColorA.rgb) + half3(config.glowColorB.rgb)) * 0.5h;
             half ambient = half(fast::exp(-r * 3.5)) * 0.08h;
             stepCol += ambientColor * ambient;
 
@@ -561,7 +598,10 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             half tightSpot = half(pow(surfaceDot, 60.0) * 0.1);
             half wideHalo = half(pow(surfaceDot, 12.0) * 0.010);
             half3 spotColor = half3(0.9h, 0.92h, 1.0h) * tightSpot;
-            half3 haloColor = mix(half3(config.glowColorA.rgb), half3(config.glowColorB.rgb), 0.5h) * wideHalo;
+            half3 haloBase = config.rainbowMode != 0
+                ? rainbowColor(tendrils[j].colorSeed)
+                : mix(half3(config.glowColorA.rgb), half3(config.glowColorB.rgb), 0.5h);
+            half3 haloColor = haloBase * wideHalo;
             plasma += spotColor + haloColor;
         }
 
@@ -604,8 +644,14 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 float lCore = exp(-dist * dist / (0.02 * 0.02));
                 float lGlow = exp(-dist * dist / (0.06 * 0.06));
 
-                half3 lightningColor = half3(0.9h, 0.9h, 1.0h) * half(lCore * envelope * 2.0);
-                lightningColor += half3(config.coreColorA.rgb) * half(lGlow * envelope * 0.5);
+                half3 lightningCore = config.rainbowMode != 0
+                    ? mix(RAINBOW_PALETTE[lt % 8], half3(1.0h), 0.5h)
+                    : half3(0.9h, 0.9h, 1.0h);
+                half3 lightningGlow = config.rainbowMode != 0
+                    ? RAINBOW_PALETTE[lt % 8]
+                    : half3(config.coreColorA.rgb);
+                half3 lightningColor = lightningCore * half(lCore * envelope * 2.0);
+                lightningColor += lightningGlow * half(lGlow * envelope * 0.5);
                 plasma += lightningColor;
             }
 
@@ -624,8 +670,12 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 float contactForce = touchForces[t];
                 float contactGlow = pow(max(surfaceDot, 0.0), 80.0) * 2.5 * (1.0 + contactForce * 0.5);
                 float contactHalo = pow(max(surfaceDot, 0.0), 15.0) * 0.4 * (1.0 + contactForce * 0.3);
-                float3 cColor = config.contactColor.rgb * contactGlow
-                              + config.glowColorB.rgb * contactHalo;
+                float3 contactGlowColor = config.rainbowMode != 0
+                    ? float3(0.95, 0.95, 1.0) : config.contactColor.rgb;
+                float3 contactHaloColor = config.rainbowMode != 0
+                    ? float3(0.8, 0.8, 1.0) : config.glowColorB.rgb;
+                float3 cColor = contactGlowColor * contactGlow
+                              + contactHaloColor * contactHalo;
                 plasma += half3(cColor);
             }
         }
