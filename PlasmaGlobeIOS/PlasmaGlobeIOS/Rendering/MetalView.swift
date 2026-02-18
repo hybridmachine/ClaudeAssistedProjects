@@ -73,21 +73,20 @@ struct MetalView: UIViewRepresentable {
         }
 
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-            if renderer == nil {
-                renderer = PlasmaRenderer(mtkView: view, touchHandler: touchHandler)
-                renderer?.plasmaConfig = settings.buildPlasmaConfig()
-                renderer?.motionManager = motionManager
-            }
+            ensureRendererInitialized(for: view)
             renderer?.mtkView(view, drawableSizeWillChange: size)
         }
 
         func draw(in view: MTKView) {
-            if renderer == nil {
-                renderer = PlasmaRenderer(mtkView: view, touchHandler: touchHandler)
-                renderer?.plasmaConfig = settings.buildPlasmaConfig()
-                renderer?.motionManager = motionManager
-            }
+            ensureRendererInitialized(for: view)
             renderer?.draw(in: view)
+        }
+
+        private func ensureRendererInitialized(for view: MTKView) {
+            guard renderer == nil else { return }
+            renderer = PlasmaRenderer(mtkView: view, touchHandler: touchHandler)
+            renderer?.plasmaConfig = settings.buildPlasmaConfig()
+            renderer?.motionManager = motionManager
         }
 
         @objc func handleMultiTouch(_ gesture: MultiTouchGestureRecognizer) {
@@ -136,19 +135,21 @@ struct MetalView: UIViewRepresentable {
             return 1.6 * tan(asin(1.0 / dist))
         }
 
-        private func isTouchInGlobeZone(normalizedX: Float, normalizedY: Float, viewSize: CGSize) -> Bool {
+        private func globeOffsetAndDistance(normalizedX: Float, normalizedY: Float, viewSize: CGSize) -> (dx: Float, dy: Float, distance: Float) {
             let aspect = Float(viewSize.width / viewSize.height)
             let dx = (normalizedX - 0.5) * aspect
             let dy = normalizedY - 0.5
-            let distance = sqrt(dx * dx + dy * dy)
+            return (dx, dy, sqrt(dx * dx + dy * dy))
+        }
+
+        private func isTouchInGlobeZone(normalizedX: Float, normalizedY: Float, viewSize: CGSize) -> Bool {
+            let (_, _, distance) = globeOffsetAndDistance(normalizedX: normalizedX, normalizedY: normalizedY, viewSize: viewSize)
             return distance <= globeScreenRadius() * 1.15
         }
 
         private func adjustTouchForGlobe(_ slot: TouchSlot, viewSize: CGSize) -> TouchSlot? {
+            let (dx, dy, distance) = globeOffsetAndDistance(normalizedX: slot.position.x, normalizedY: slot.position.y, viewSize: viewSize)
             let aspect = Float(viewSize.width / viewSize.height)
-            let dx = (slot.position.x - 0.5) * aspect
-            let dy = slot.position.y - 0.5
-            let distance = sqrt(dx * dx + dy * dy)
             let radius = globeScreenRadius()
             let marginRadius = radius * 1.15
 

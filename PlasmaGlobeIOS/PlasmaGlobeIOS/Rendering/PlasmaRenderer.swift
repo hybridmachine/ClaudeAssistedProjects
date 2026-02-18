@@ -30,15 +30,13 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
         self.touchHandler = touchHandler
         self.startTime = CFAbsoluteTimeGetCurrent()
 
-        let starfieldDesc = MTLRenderPipelineDescriptor()
-        starfieldDesc.vertexFunction = library.makeFunction(name: "fullscreenQuadVertex")
-        starfieldDesc.fragmentFunction = library.makeFunction(name: "starfieldFragment")
-        starfieldDesc.colorAttachments[0].pixelFormat = mtkView.colorPixelFormat
+        let starfieldDesc = Self.makeBasePipelineDescriptor(
+            library: library, fragmentFunction: "starfieldFragment", pixelFormat: mtkView.colorPixelFormat
+        )
 
-        let plasmaDesc = MTLRenderPipelineDescriptor()
-        plasmaDesc.vertexFunction = library.makeFunction(name: "fullscreenQuadVertex")
-        plasmaDesc.fragmentFunction = library.makeFunction(name: "plasmaGlobeFragment")
-        plasmaDesc.colorAttachments[0].pixelFormat = mtkView.colorPixelFormat
+        let plasmaDesc = Self.makeBasePipelineDescriptor(
+            library: library, fragmentFunction: "plasmaGlobeFragment", pixelFormat: mtkView.colorPixelFormat
+        )
         plasmaDesc.colorAttachments[0].isBlendingEnabled = true
         plasmaDesc.colorAttachments[0].rgbBlendOperation = .add
         plasmaDesc.colorAttachments[0].alphaBlendOperation = .add
@@ -58,6 +56,16 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
         self.noiseTexture = PlasmaRenderer.makeNoiseTexture(device: device)
 
         super.init()
+    }
+
+    private static func makeBasePipelineDescriptor(
+        library: MTLLibrary, fragmentFunction: String, pixelFormat: MTLPixelFormat
+    ) -> MTLRenderPipelineDescriptor {
+        let desc = MTLRenderPipelineDescriptor()
+        desc.vertexFunction = library.makeFunction(name: "fullscreenQuadVertex")
+        desc.fragmentFunction = library.makeFunction(name: fragmentFunction)
+        desc.colorAttachments[0].pixelFormat = pixelFormat
+        return desc
     }
 
     private static func makeNoiseTexture(device: MTLDevice) -> MTLTexture {

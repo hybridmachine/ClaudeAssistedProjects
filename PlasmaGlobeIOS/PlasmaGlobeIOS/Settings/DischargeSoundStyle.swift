@@ -36,4 +36,14 @@ enum DischargeSoundStyle: String, CaseIterable, Identifiable {
     static func from(id: String) -> DischargeSoundStyle {
         DischargeSoundStyle(rawValue: id) ?? .crystallineChime
     }
+
+    var synthesizer: any DischargeSoundSynthesizer {
+        switch self {
+        case .crackle: return CrackleSynthesizer()
+        case .crystallineChime: return CrystallineChimeSynthesizer()
+        case .harmonicShimmer: return HarmonicShimmerSynthesizer()
+        case .singingBowl: return SingingBowlSynthesizer()
+        case .electricArcSweep: return ElectricArcSweepSynthesizer()
+        }
+    }
 }

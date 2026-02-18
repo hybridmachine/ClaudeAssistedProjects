@@ -133,65 +133,14 @@ final class AudioManager {
             }
 
             let vol = p.isEnabled ? p.volume : 0
-            let style = p.dischargeSoundStyle
+            var synth = DischargeSoundStyle.from(intValue: p.dischargeSoundStyle).synthesizer
 
             for i in 0..<frames {
                 if p.dischargeEnvelope > 0.001 {
-                    let sample: Float
-
-                    switch style {
-                    case 0: // Crackle — white noise burst
-                        let noise = Float.random(in: -1...1)
-                        sample = noise * p.dischargeEnvelope * 0.6
-                        p.dischargeEnvelope *= 0.9997
-
-                    case 1: // Crystalline Chime — harmonic sine tones
-                        let d6: Float = 1174.66   // D6
-                        let d7: Float = 2349.32   // D7
-                        let a6: Float = 1760.0    // A6
-                        let a7: Float = 3520.0    // A7
-                        let t1 = sin(localPhase * d6 * 2 * .pi) * 0.35
-                        let t2 = sin(localPhase * d7 * 2 * .pi) * 0.25
-                        let t3 = sin(localPhase * a6 * 2 * .pi) * 0.25
-                        let t4 = sin(localPhase * a7 * 2 * .pi) * 0.15
-                        sample = (t1 + t2 + t3 + t4) * p.dischargeEnvelope * 0.5
-                        p.dischargeEnvelope *= 0.99985
-
-                    case 2: // Harmonic Shimmer — detuned beating sines
-                        let tp = localPhase * 2 * .pi
-                        let s0 = sin(tp * 1800)
-                        let s1 = sin(tp * 1803)
-                        let s2 = sin(tp * 1807)
-                        let s3 = sin(tp * 1811)
-                        let s4 = sin(tp * 1815)
-                        sample = ((s0 + s1 + s2 + s3 + s4) / 5.0) * p.dischargeEnvelope * 0.5
-                        p.dischargeEnvelope *= 0.9999
-
-                    case 3: // Singing Bowl — rich harmonics with wobble
-                        let fundamental: Float = 293.0
-                        let wobble = 1.0 + sin(localPhase2 * 5.0 * 2 * .pi) * 0.003
-                        var sum: Float = 0
-                        for h in 1...5 {
-                            let hf = Float(h)
-                            let envPow = powf(p.dischargeEnvelope, hf)
-                            sum += sin(localPhase * fundamental * hf * wobble * 2 * .pi) * envPow / hf
-                        }
-                        sample = sum * 0.4
-                        p.dischargeEnvelope *= 0.99995
-
-                    case 4: // Electric Arc Sweep — frequency sweep with tremolo
-                        let freq = 2500.0 * p.dischargeEnvelope + 80.0 * (1.0 - p.dischargeEnvelope)
-                        let sine = sin(localPhase * freq * 2 * .pi)
-                        let noise = Float.random(in: -1...1) * 0.1
-                        let tremolo = 1.0 + sin(localPhase2 * 30.0 * 2 * .pi) * 0.3
-                        sample = (sine + noise) * tremolo * p.dischargeEnvelope * 0.5
-                        p.dischargeEnvelope *= 0.9998
-
-                    default:
-                        sample = 0
-                    }
-
-                    data[i] = sample * vol
+                    let result = synth.synthesize(phase: localPhase, phase2: localPhase2,
+                                                  envelope: p.dischargeEnvelope, sampleRate: sr)
+                    data[i] = result.sample * vol
+                    p.dischargeEnvelope = result.newEnvelope
                     localPhase += 1.0 / sr
                     if localPhase > 1.0 { localPhase -= 1.0 }
                     localPhase2 += 1.0 / sr
