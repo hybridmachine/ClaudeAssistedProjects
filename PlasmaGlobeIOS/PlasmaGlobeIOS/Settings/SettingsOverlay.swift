@@ -60,7 +60,7 @@ struct SettingsOverlay: View {
 
             settingsSlider(label: "Speed", value: $settings.speed, range: 0.2...3.0)
 
-            settingsSlider(label: "Thickness", value: $settings.tendrilThickness, range: 0.5...2.0)
+            settingsSlider(label: "Thickness", value: $settings.tendrilThickness, range: 0.5...4.0)
 
             settingsSlider(label: "Respawn", value: $settings.respawnRate, range: 0.25...3.0)
 
