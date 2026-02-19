@@ -111,7 +111,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
 
         // === Volumetric plasma tendrils ===
         half3 plasma = half3(0.0h);
-        int stepCount = int(clamp(pathLen * 25.0, 20.0, float(VOL_STEPS)));
+        int stepCount = int(clamp(pathLen * 18.0, 14.0, float(VOL_STEPS)));
         float dt = pathLen / float(stepCount);
 
         for (int i = 0; i < stepCount; i++) {
@@ -150,15 +150,6 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                     float nx2 = tnoise(np2, noiseTex, smp) - 0.5;
                     float ny2 = tnoise(np2 + float3(197, 0, 0), noiseTex, smp) - 0.5;
                     noiseDisp += (tRight * nx2 + tFwd * ny2) * dispAmt * 0.3;
-                }
-
-                // Ridged noise for angular kinks in outer half
-                if (along > 0.4) {
-                    float3 np3 = float3(along * 14.0, fj * 31.7 + time * 0.7, fj * 21.9);
-                    float rx = abs(tnoise(np3, noiseTex, smp) - 0.5);
-                    float ry = abs(tnoise(np3 + float3(293, 0, 0), noiseTex, smp) - 0.5);
-                    float kinkAmt = smoothstep(0.4, 0.7, along) * 0.15;
-                    noiseDisp += (tRight * (rx * rx) + tFwd * (ry * ry)) * kinkAmt;
                 }
 
                 float dist = length(perp - noiseDisp);
@@ -203,7 +194,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                 totalColor += glowColor * glow * fade * 0.23h * forceBright;
 
                 // === Branching (subtle thin filaments) ===
-                if (along > tendrils[j].forkPoint) {
+                if (along > tendrils[j].forkPoint && dist < 0.12) {
                     float branchT = (along - tendrils[j].forkPoint) / (1.0 - tendrils[j].forkPoint);
                     half branchFadeIn = half(smoothstep(0.0, 0.15, branchT));
                     float spread = branchT * 0.07;
@@ -237,7 +228,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
 
             plasma += stepCol * half(dt);
 
-            if (dot(plasma, plasma) > 9.0h) break;
+            if (dot(plasma, plasma) > 4.0h) break;
         }
 
         // === Per-tendril glass termination glow ===
@@ -247,6 +238,7 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             float3 glassPoint = normalize(tDir) * SPHERE_R;
             float3 glassNormal = normalize(glassPoint);
             float surfaceDot = max(dot(normal, glassNormal), 0.0);
+            if (surfaceDot < 0.05) continue;
             half tightSpot = half(pow(surfaceDot, 60.0) * 0.1);
             half wideHalo = half(pow(surfaceDot, 12.0) * 0.010);
             half3 spotColor = half3(0.9h, 0.92h, 1.0h) * tightSpot;
@@ -350,4 +342,12 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
     color = 1.0 - fast::exp(-color * 2.5);
 
     return float4(max(color, float3(0.0)), 1.0);
+}
+
+// Composite pass: samples half-res offscreen plasma texture and outputs for additive blend
+fragment float4 compositeFragment(VertexOut in [[stage_in]],
+                                   texture2d<float> offscreen [[texture(0)]]) {
+    constexpr sampler smp(filter::linear, address::clamp_to_edge);
+    float2 uv = float2(in.uv.x, 1.0 - in.uv.y);
+    return offscreen.sample(smp, uv);
 }

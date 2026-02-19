@@ -6,11 +6,13 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
     private let commandQueue: MTLCommandQueue
     private let starfieldPipeline: MTLRenderPipelineState
     private let plasmaPipeline: MTLRenderPipelineState
+    private let compositePipeline: MTLRenderPipelineState
     private let noiseTexture: MTLTexture
     private let startTime: CFAbsoluteTime
     private weak var touchHandler: TouchHandler?
     private var cameraTime: Float = 0
     private var lastFrameTime: CFAbsoluteTime?
+    private var offscreenTexture: MTLTexture?
 
     private var dischargeStartTime: CFAbsoluteTime?
     private static let dischargeDuration: CFTimeInterval = 1.5
@@ -34,20 +36,27 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
             library: library, fragmentFunction: "starfieldFragment", pixelFormat: mtkView.colorPixelFormat
         )
 
+        // Plasma renders to half-res rgba16Float offscreen texture
         let plasmaDesc = Self.makeBasePipelineDescriptor(
-            library: library, fragmentFunction: "plasmaGlobeFragment", pixelFormat: mtkView.colorPixelFormat
+            library: library, fragmentFunction: "plasmaGlobeFragment", pixelFormat: .rgba16Float
         )
-        plasmaDesc.colorAttachments[0].isBlendingEnabled = true
-        plasmaDesc.colorAttachments[0].rgbBlendOperation = .add
-        plasmaDesc.colorAttachments[0].alphaBlendOperation = .add
-        plasmaDesc.colorAttachments[0].sourceRGBBlendFactor = .one
-        plasmaDesc.colorAttachments[0].destinationRGBBlendFactor = .one
-        plasmaDesc.colorAttachments[0].sourceAlphaBlendFactor = .one
-        plasmaDesc.colorAttachments[0].destinationAlphaBlendFactor = .zero
+
+        // Composite pass: additively blends offscreen plasma onto the starfield drawable
+        let compositeDesc = Self.makeBasePipelineDescriptor(
+            library: library, fragmentFunction: "compositeFragment", pixelFormat: mtkView.colorPixelFormat
+        )
+        compositeDesc.colorAttachments[0].isBlendingEnabled = true
+        compositeDesc.colorAttachments[0].rgbBlendOperation = .add
+        compositeDesc.colorAttachments[0].alphaBlendOperation = .add
+        compositeDesc.colorAttachments[0].sourceRGBBlendFactor = .one
+        compositeDesc.colorAttachments[0].destinationRGBBlendFactor = .one
+        compositeDesc.colorAttachments[0].sourceAlphaBlendFactor = .one
+        compositeDesc.colorAttachments[0].destinationAlphaBlendFactor = .zero
 
         do {
             self.starfieldPipeline = try device.makeRenderPipelineState(descriptor: starfieldDesc)
             self.plasmaPipeline = try device.makeRenderPipelineState(descriptor: plasmaDesc)
+            self.compositePipeline = try device.makeRenderPipelineState(descriptor: compositeDesc)
         } catch {
             print("Failed to create pipeline states: \(error)")
             return nil
@@ -92,7 +101,26 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
         return texture
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+    private func ensureOffscreenTexture(drawableSize: CGSize) {
+        let w = max(Int(drawableSize.width * 0.5), 1)
+        let h = max(Int(drawableSize.height * 0.5), 1)
+        if let existing = offscreenTexture, existing.width == w, existing.height == h {
+            return
+        }
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float,
+            width: w,
+            height: h,
+            mipmapped: false
+        )
+        desc.usage = [.renderTarget, .shaderRead]
+        desc.storageMode = .private
+        offscreenTexture = device.makeTexture(descriptor: desc)
+    }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        ensureOffscreenTexture(drawableSize: size)
+    }
 
     func draw(in view: MTKView) {
         guard let handler = touchHandler, handler.isActive else { return }
@@ -102,7 +130,13 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
 
         let now = CFAbsoluteTimeGetCurrent()
         let time = Float(now - startTime)
-        let resolution = SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height))
+        let drawableSize = view.drawableSize
+        let resolution = SIMD2<Float>(Float(drawableSize.width), Float(drawableSize.height))
+
+        // Ensure offscreen texture exists at half resolution
+        ensureOffscreenTexture(drawableSize: drawableSize)
+        guard let offscreen = offscreenTexture else { return }
+        let offscreenResolution = SIMD2<Float>(Float(offscreen.width), Float(offscreen.height))
 
         // Advance camera orbit only when not touching
         if let last = lastFrameTime, !handler.isTouching {
@@ -134,11 +168,22 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
             }
         }
 
-        // Build uniforms
+        // Build uniforms for starfield/composite (full drawable resolution)
         let touchSlots = handler.touchSlots
         var uniforms = Uniforms(
             time: time,
             resolution: resolution,
+            cameraDistance: handler.cameraDistance,
+            cameraTime: cameraTime,
+            touchCount: Int32(touchSlots.count),
+            dischargeTime: dischargeTime,
+            gyroTilt: motionManager?.tilt ?? .zero
+        )
+
+        // Build uniforms for plasma pass (half resolution)
+        var plasmaUniforms = Uniforms(
+            time: time,
+            resolution: offscreenResolution,
             cameraDistance: handler.cameraDistance,
             cameraTime: cameraTime,
             touchCount: Int32(touchSlots.count),
@@ -158,7 +203,7 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
 
         var config = plasmaConfig
 
-        // Pass 1: Starfield
+        // Pass 1: Starfield -> drawable
         descriptor.colorAttachments[0].loadAction = .clear
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.005, green: 0.005, blue: 0.015, alpha: 1.0)
         descriptor.colorAttachments[0].storeAction = .store
@@ -170,16 +215,30 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
             encoder.endEncoding()
         }
 
-        // Pass 2: Plasma globe (additive blend over starfield)
+        // Pass 2: Plasma -> offscreen texture (half-res)
+        let offscreenDescriptor = MTLRenderPassDescriptor()
+        offscreenDescriptor.colorAttachments[0].texture = offscreen
+        offscreenDescriptor.colorAttachments[0].loadAction = .clear
+        offscreenDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        offscreenDescriptor.colorAttachments[0].storeAction = .store
+
+        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: offscreenDescriptor) {
+            encoder.setRenderPipelineState(plasmaPipeline)
+            encoder.setFragmentBytes(&plasmaUniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+            encoder.setFragmentBytes(&touchPoints, length: MemoryLayout<TouchPoint>.stride * maxTouchSlots, index: 1)
+            encoder.setFragmentBytes(&config, length: MemoryLayout<PlasmaConfig>.stride, index: 2)
+            encoder.setFragmentTexture(noiseTexture, index: 0)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            encoder.endEncoding()
+        }
+
+        // Pass 3: Composite offscreen -> drawable (additive blend over starfield)
         descriptor.colorAttachments[0].loadAction = .load
         descriptor.colorAttachments[0].storeAction = .store
 
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) {
-            encoder.setRenderPipelineState(plasmaPipeline)
-            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-            encoder.setFragmentBytes(&touchPoints, length: MemoryLayout<TouchPoint>.stride * maxTouchSlots, index: 1)
-            encoder.setFragmentBytes(&config, length: MemoryLayout<PlasmaConfig>.stride, index: 2)
-            encoder.setFragmentTexture(noiseTexture, index: 0)
+            encoder.setRenderPipelineState(compositePipeline)
+            encoder.setFragmentTexture(offscreen, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             encoder.endEncoding()
         }

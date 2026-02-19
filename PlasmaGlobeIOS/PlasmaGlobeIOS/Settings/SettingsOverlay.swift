@@ -73,6 +73,19 @@ struct SettingsOverlay: View {
             Toggle("Tilt", isOn: $settings.tiltEnabled)
                 .plasmaToggleStyle()
 
+            HStack {
+                Text("Frame Rate")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+                Spacer()
+                Picker("", selection: $settings.preferredFPS) {
+                    Text("30 FPS").tag(30)
+                    Text("60 FPS").tag(60)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 140)
+            }
+
             Toggle("Sound", isOn: $settings.soundEnabled)
                 .plasmaToggleStyle()
 
