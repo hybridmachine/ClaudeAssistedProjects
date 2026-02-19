@@ -4,21 +4,98 @@ struct ThemePickerSection: View {
     @ObservedObject var settings: PlasmaSettings
     var onInteraction: () -> Void
 
+    private var currentMode: ThemeMode {
+        ThemeMode(rawValue: settings.themeMode) ?? .custom
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Theme")
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.7))
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(ColorTheme.allThemes) { theme in
-                        themeButton(theme)
-                    }
+            HStack(spacing: 12) {
+                modeButton(.custom, label: "Custom") {
+                    customPreviewCircle
                 }
-                .padding(.horizontal, 4)
+                modeButton(.void, label: "Void") {
+                    voidPreviewCircle
+                }
+                modeButton(.rainbow, label: "Rainbow") {
+                    rainbowPreviewCircle
+                }
+            }
+
+            if currentMode == .custom {
+                VStack(spacing: 10) {
+                    ColorPicker("Tendril Color", selection: tendrilColorBinding, supportsOpacity: false)
+                        .foregroundColor(.white.opacity(0.8))
+                        .font(.caption)
+                    ColorPicker("Endpoint Color", selection: endpointColorBinding, supportsOpacity: false)
+                        .foregroundColor(.white.opacity(0.8))
+                        .font(.caption)
+                }
+                .padding(.top, 4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: currentMode)
+    }
+
+    // MARK: - Mode Button
+
+    private func modeButton<Preview: View>(_ mode: ThemeMode, label: String, @ViewBuilder preview: () -> Preview) -> some View {
+        let isSelected = currentMode == mode
+        return Button {
+            settings.themeMode = mode.rawValue
+            onInteraction()
+        } label: {
+            VStack(spacing: 4) {
+                ZStack {
+                    preview()
+                        .frame(width: 36, height: 36)
+
+                    if isSelected {
+                        Circle()
+                            .strokeBorder(Color.white, lineWidth: 2)
+                            .frame(width: 40, height: 40)
+                    }
+                }
+
+                Text(label)
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.8))
+                    .lineLimit(1)
+            }
+            .frame(width: 52)
+        }
+    }
+
+    // MARK: - Preview Circles
+
+    private var customPreviewCircle: some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: [settings.customTendrilColor, settings.customEndpointColor],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+    }
+
+    private var voidPreviewCircle: some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.6, green: 0.6, blue: 0.7),
+                        Color(red: 0.08, green: 0.08, blue: 0.15)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
     }
 
     private static let rainbowPreviewColors: [Color] = [
@@ -30,56 +107,38 @@ struct ThemePickerSection: View {
         Color(red: 0.2, green: 0.4, blue: 1.0),
         Color(red: 0.45, green: 0.2, blue: 0.95),
         Color(red: 0.9, green: 0.2, blue: 0.7),
-        Color(red: 1.0, green: 0.2, blue: 0.15) // wrap back to red
+        Color(red: 1.0, green: 0.2, blue: 0.15)
     ]
 
-    private func themeButton(_ theme: ColorTheme) -> some View {
-        let colors = theme.previewColors
-        let isSelected = settings.selectedThemeId == theme.id
+    private var rainbowPreviewCircle: some View {
+        Circle()
+            .fill(
+                AngularGradient(
+                    colors: Self.rainbowPreviewColors,
+                    center: .center
+                )
+            )
+    }
 
-        return Button {
-            settings.selectedThemeId = theme.id
-            onInteraction()
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    if theme.isRainbow {
-                        Circle()
-                            .fill(
-                                AngularGradient(
-                                    colors: Self.rainbowPreviewColors,
-                                    center: .center
-                                )
-                            )
-                            .frame(width: 36, height: 36)
-                    } else {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: Double(colors.0.x), green: Double(colors.0.y), blue: Double(colors.0.z)),
-                                        Color(red: Double(colors.1.x), green: Double(colors.1.y), blue: Double(colors.1.z))
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 36, height: 36)
-                    }
+    // MARK: - Color Bindings
 
-                    if isSelected {
-                        Circle()
-                            .strokeBorder(Color.white, lineWidth: 2)
-                            .frame(width: 40, height: 40)
-                    }
-                }
-
-                Text(theme.name)
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.8))
-                    .lineLimit(1)
+    private var tendrilColorBinding: Binding<Color> {
+        Binding(
+            get: { settings.customTendrilColor },
+            set: { newColor in
+                settings.customTendrilColor = newColor
+                onInteraction()
             }
-            .frame(width: 52)
-        }
+        )
+    }
+
+    private var endpointColorBinding: Binding<Color> {
+        Binding(
+            get: { settings.customEndpointColor },
+            set: { newColor in
+                settings.customEndpointColor = newColor
+                onInteraction()
+            }
+        )
     }
 }
