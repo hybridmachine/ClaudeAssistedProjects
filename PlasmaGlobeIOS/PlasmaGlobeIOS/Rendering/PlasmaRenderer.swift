@@ -144,11 +144,11 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
         }
         lastFrameTime = now
 
-        // Compute default camera distance for ~70% screen width on first frame
+        // Compute default camera distance for ~95% screen width on first frame
         if handler.cameraDistance <= 0 {
             let aspect = resolution.x / resolution.y
             let fov: Float = 1.6
-            let targetHalf: Float = 0.35 * aspect
+            let targetHalf: Float = 0.475 * aspect
             handler.cameraDistance = sqrt((fov / targetHalf) * (fov / targetHalf) + 1.0)
         }
 
