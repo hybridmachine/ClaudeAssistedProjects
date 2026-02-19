@@ -224,6 +224,9 @@ struct TendrilInfo {
     int branchCount;
     float flicker;
     float colorSeed;
+    int hasForkTongue;
+    float forkTongueStart;
+    float3 forkTongueDir;
 };
 
 static TendrilInfo computeTendril(int idx, float time, float realTime,
@@ -322,6 +325,15 @@ static TendrilInfo computeTendril(int idx, float time, float realTime,
 
     // Per-tendril color seed for rainbow mode (changes each generation)
     info.colorSeed = fract(sin(generation * 53.7 + fi * 97.3) * 43758.5453);
+
+    // Fork tongue: ~40% of tendrils split into two prongs near the glass surface
+    float forkHash = fract(sin(generation * 173.9 + fi * 419.3) * 43758.5453);
+    info.hasForkTongue = (forkHash < 0.4) ? 1 : 0;
+    float forkStartHash = fract(sin(generation * 251.7 + fi * 337.1) * 43758.5453);
+    info.forkTongueStart = 0.50 + forkStartHash * 0.10;
+    float forkAngle = fract(sin(generation * 389.3 + fi * 197.7) * 43758.5453) * 6.2832
+                    + time * 0.03 * speed;
+    info.forkTongueDir = normalize(rt * cos(forkAngle) + fw * sin(forkAngle));
 
     return info;
 }
