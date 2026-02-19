@@ -11,7 +11,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleDisplayName</key>
-	<string>Phase Four</string>
+	<string>Phase Zen</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
@@ -51,7 +51,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSMotionUsageDescription</key>
-	<string>Phase Four uses device motion to create parallax effects in the starfield and plasma globe.</string>
+	<string>Phase Zen uses device motion to create parallax effects in the starfield and plasma globe.</string>
 	<key>UIStatusBarHidden</key>
 	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
