@@ -152,13 +152,41 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                     noiseDisp += (tRight * nx2 + tFwd * ny2) * dispAmt * 0.3;
                 }
 
-                float dist = length(perp - noiseDisp);
+                // Fork tongue: smooth-min blending of two displaced prongs
+                float dist;
+                float forkTaper = 1.0;
+                if (tendrils[j].hasForkTongue != 0 && along > tendrils[j].forkTongueStart) {
+                    float forkT = (along - tendrils[j].forkTongueStart)
+                                / (SPHERE_R - tendrils[j].forkTongueStart);
+                    float spread = forkT * forkT * 0.06;
+
+                    float3 prong1 = noiseDisp + tendrils[j].forkTongueDir * spread;
+                    float3 prong2 = noiseDisp - tendrils[j].forkTongueDir * spread;
+
+                    float dist1 = length(perp - prong1);
+                    float dist2 = length(perp - prong2);
+
+                    // Polynomial smooth minimum (k=0.012) for organic junction
+                    float k = 0.012;
+                    float h = clamp(0.5 + 0.5 * (dist2 - dist1) / k, 0.0, 1.0);
+                    float smin = mix(dist2, dist1, h) - k * h * (1.0 - h);
+
+                    float singleDist = length(perp - noiseDisp);
+                    // Blend from single tendril to forked over first 25% of fork zone
+                    float blendIn = smoothstep(0.0, 0.25, forkT);
+                    dist = mix(singleDist, smin, blendIn);
+
+                    // Prongs thin to 80% width at tips
+                    forkTaper = mix(1.0, 0.8, blendIn * forkT);
+                } else {
+                    dist = length(perp - noiseDisp);
+                }
 
                 // Force modulates width (+50% at max force)
                 float forceWidth = 1.0 + (fScale - 1.0) * 0.625;
-                float taper = 1.0 - along * 0.3;
+                float taper = (1.0 - along * 0.3) * forkTaper;
                 float coreW = 0.015 * thickness * forceWidth * taper;
-                float glowW = (0.035 + along * 0.015) * thickness * forceWidth;
+                float glowW = (0.035 + along * 0.015) * thickness * forceWidth * forkTaper;
                 float coreArg = dist / max(coreW, 0.001);
                 half core = half(exp(-(coreArg * coreArg)));
                 half glow = half(fast::exp(-dist * dist / (glowW * glowW)));
@@ -234,19 +262,39 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
         // === Per-tendril glass termination glow ===
         for (int j = 0; j < numTendrils; j++) {
             float3 tDir = tendrils[j].dir;
-            // Approximate glass endpoint: tendril direction scaled to sphere surface
-            float3 glassPoint = normalize(tDir) * SPHERE_R;
-            float3 glassNormal = normalize(glassPoint);
-            float surfaceDot = max(dot(normal, glassNormal), 0.0);
-            if (surfaceDot < 0.05) continue;
-            half tightSpot = half(pow(surfaceDot, 60.0) * 0.1);
-            half wideHalo = half(pow(surfaceDot, 12.0) * 0.010);
-            half3 spotColor = half3(0.9h, 0.92h, 1.0h) * tightSpot;
             half3 haloBase = config.rainbowMode != 0
                 ? rainbowColor(tendrils[j].colorSeed)
                 : mix(half3(config.glowColorA.rgb), half3(config.glowColorB.rgb), 0.5h);
-            half3 haloColor = haloBase * wideHalo;
-            plasma += spotColor + haloColor;
+
+            if (tendrils[j].hasForkTongue != 0) {
+                // Two glow spots for forked tendrils, one per prong endpoint
+                float3 forkDir = tendrils[j].forkTongueDir;
+                float forkSpread = 0.06; // max spread at surface
+                float3 glassPoint1 = normalize(tDir + forkDir * forkSpread) * SPHERE_R;
+                float3 glassPoint2 = normalize(tDir - forkDir * forkSpread) * SPHERE_R;
+
+                for (int p = 0; p < 2; p++) {
+                    float3 glassNormal = normalize(p == 0 ? glassPoint1 : glassPoint2);
+                    float surfaceDot = max(dot(normal, glassNormal), 0.0);
+                    if (surfaceDot < 0.05) continue;
+                    half tightSpot = half(pow(surfaceDot, 60.0) * 0.07);
+                    half wideHalo = half(pow(surfaceDot, 12.0) * 0.007);
+                    half3 spotColor = half3(0.9h, 0.92h, 1.0h) * tightSpot;
+                    half3 haloColor = haloBase * wideHalo;
+                    plasma += spotColor + haloColor;
+                }
+            } else {
+                // Single glow spot for non-forked tendrils
+                float3 glassPoint = normalize(tDir) * SPHERE_R;
+                float3 glassNormal = normalize(glassPoint);
+                float surfaceDot = max(dot(normal, glassNormal), 0.0);
+                if (surfaceDot < 0.05) continue;
+                half tightSpot = half(pow(surfaceDot, 60.0) * 0.1);
+                half wideHalo = half(pow(surfaceDot, 12.0) * 0.010);
+                half3 spotColor = half3(0.9h, 0.92h, 1.0h) * tightSpot;
+                half3 haloColor = haloBase * wideHalo;
+                plasma += spotColor + haloColor;
+            }
         }
 
         // === Discharge flash ===
