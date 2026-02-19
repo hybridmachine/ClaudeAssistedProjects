@@ -2,7 +2,7 @@ import UIKit
 import Combine
 
 final class TouchHandler: ObservableObject {
-    @Published var touchSlots: [TouchSlot] = []
+    var touchSlots: [TouchSlot] = []
     @Published var isActive: Bool = true
     @Published var cameraDistance: Float = 0.0
     @Published var dischargeTriggered: Bool = false

@@ -46,6 +46,7 @@ struct MetalView: UIViewRepresentable {
 
     func updateUIView(_ uiView: MTKView, context: Context) {
         uiView.isPaused = !touchHandler.isActive
+        uiView.preferredFramesPerSecond = settings.preferredFPS
         context.coordinator.updateSettings(settings)
     }
 

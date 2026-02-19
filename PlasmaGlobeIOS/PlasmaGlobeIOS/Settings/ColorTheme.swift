@@ -67,10 +67,10 @@ extension ColorTheme {
         return ColorTheme(
             id: "custom",
             name: "Custom",
-            coreColorA: SIMD4<Float>(mix(t, white, t: 0.7), 1.0),
+            coreColorA: SIMD4<Float>(mix(e, white, t: 0.7), 1.0),
             coreColorB: SIMD4<Float>(mix(t, white, t: 0.5), 1.0),
-            glowColorA: SIMD4<Float>(t, 1.0),
-            glowColorB: SIMD4<Float>(e, 1.0),
+            glowColorA: SIMD4<Float>(e, 1.0),
+            glowColorB: SIMD4<Float>(t, 1.0),
             shellTint:  SIMD4<Float>(t * 0.05, 1.0),
             contactColor: SIMD4<Float>(mix(e, white, t: 0.3), 1.0)
         )

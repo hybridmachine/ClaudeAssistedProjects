@@ -46,14 +46,14 @@ struct PlasmaConfig {
 
 constant int MAX_TENDRILS = 20;
 constant int MAX_TOUCHES = 5;
-constant int VOL_STEPS = 40;
+constant int VOL_STEPS = 24;
 constant float SPHERE_R = 1.0;
 constant float CORE_R = 0.06;
 constant float POST_RADIUS_MAX = 0.095;
 constant float POST_BOTTOM = -SPHERE_R;
 constant float POST_TOP = 0.0;
 constant float ELECTRODE_R = 0.095;
-constant float QUICK_REJECT_DIST = 0.25;
+constant float QUICK_REJECT_DIST = 0.18;
 
 // === Utility functions ===
 

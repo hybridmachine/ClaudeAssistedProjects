@@ -20,6 +20,7 @@ final class PlasmaSettings: ObservableObject {
     @AppStorage("humFrequency") var humFrequency: Double = 60.0
     @AppStorage("tiltEnabled") var tiltEnabled: Bool = true
     @AppStorage("respawnRate") var respawnRate: Double = 1.0
+    @AppStorage("preferredFPS") var preferredFPS: Int = 60
 
     init() {
         // One-time migration from old selectedThemeId

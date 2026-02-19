@@ -6,6 +6,23 @@ final class AudioManager {
     private var humNode: AVAudioSourceNode?
     private var crackleNode: AVAudioSourceNode?
 
+    private static let sinLUTSize = 4096
+    private static let sinLUT: [Float] = {
+        (0..<sinLUTSize).map { i in
+            sinf(Float(i) / Float(sinLUTSize) * 2 * .pi)
+        }
+    }()
+
+    @inline(__always)
+    private static func fastSin(phase: Float) -> Float {
+        let wrapped = phase - floorf(phase)
+        let indexF = wrapped * Float(sinLUTSize)
+        let i0 = Int(indexF) & (sinLUTSize - 1)
+        let i1 = (i0 + 1) & (sinLUTSize - 1)
+        let frac = indexF - floorf(indexF)
+        return sinLUT[i0] + (sinLUT[i1] - sinLUT[i0]) * frac
+    }
+
     // Shared state between main thread and audio render thread
     private struct AudioParams {
         var isEnabled: Bool = true
@@ -90,11 +107,11 @@ final class AudioManager {
                 // Volume scales from quiet ambient (0.10) to loud touched (0.25)
                 let vol = p.isEnabled ? p.volume * (0.10 + localHumBoost * 0.15) : 0
 
-                let fundamental = sin(localHumPhase * 2 * .pi) * 0.5
-                let harmonic2 = sin(localHumPhase * 4 * .pi) * 0.12
-                let harmonic3 = sin(localHumPhase * 6 * .pi) * 0.03
+                let fundamental = AudioManager.fastSin(phase: localHumPhase) * 0.5
+                let harmonic2 = AudioManager.fastSin(phase: localHumPhase * 2) * 0.12
+                let harmonic3 = AudioManager.fastSin(phase: localHumPhase * 3) * 0.03
 
-                let mod = 1.0 + sin(localHumPhase2 * 2 * .pi) * 0.08
+                let mod = 1.0 + AudioManager.fastSin(phase: localHumPhase2) * 0.08
                 let sample = (fundamental + harmonic2 + harmonic3) * mod * vol
 
                 data[i] = sample
@@ -115,6 +132,10 @@ final class AudioManager {
         var localPhase: Float = 0
         var localPhase2: Float = 0
 
+        // Cached synthesizer to avoid per-buffer allocation
+        var cachedSynthStyleId: Int = -1
+        var cachedSynth: any DischargeSoundSynthesizer = CrystallineChimeSynthesizer()
+
         let crackleSource = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
             var p = dischargeParams.withLock {
                 let snapshot = $0
@@ -133,7 +154,11 @@ final class AudioManager {
             }
 
             let vol = p.isEnabled ? p.volume : 0
-            var synth = DischargeSoundStyle.from(intValue: p.dischargeSoundStyle).synthesizer
+            if p.dischargeSoundStyle != cachedSynthStyleId {
+                cachedSynthStyleId = p.dischargeSoundStyle
+                cachedSynth = DischargeSoundStyle.from(intValue: p.dischargeSoundStyle).synthesizer
+            }
+            var synth = cachedSynth
 
             for i in 0..<frames {
                 if p.dischargeEnvelope > 0.001 {
