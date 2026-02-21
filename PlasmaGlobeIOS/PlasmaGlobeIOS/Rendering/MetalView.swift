@@ -6,6 +6,7 @@ struct MetalView: UIViewRepresentable {
     @ObservedObject var settings: PlasmaSettings
     var motionManager: MotionManager?
     var breathingEngine: BreathingEngine?
+    var captureManager: CaptureManager?
 
     func makeUIView(context: Context) -> MTKView {
         let mtkView = MTKView()
@@ -50,10 +51,14 @@ struct MetalView: UIViewRepresentable {
         uiView.preferredFramesPerSecond = settings.preferredFPS
         context.coordinator.updateSettings(settings)
         context.coordinator.breathingEngine = breathingEngine
+        context.coordinator.captureManager = captureManager
+        captureManager?.requestScreenshotAsync = { [weak coordinator = context.coordinator] completion in
+            coordinator?.requestScreenshot(completion: completion)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(touchHandler: touchHandler, settings: settings, motionManager: motionManager, breathingEngine: breathingEngine)
+        Coordinator(touchHandler: touchHandler, settings: settings, motionManager: motionManager, breathingEngine: breathingEngine, captureManager: captureManager)
     }
 
     final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate {
@@ -62,13 +67,19 @@ struct MetalView: UIViewRepresentable {
         private var settings: PlasmaSettings
         private var motionManager: MotionManager?
         var breathingEngine: BreathingEngine?
+        var captureManager: CaptureManager?
 
-        init(touchHandler: TouchHandler, settings: PlasmaSettings, motionManager: MotionManager?, breathingEngine: BreathingEngine?) {
+        init(touchHandler: TouchHandler, settings: PlasmaSettings, motionManager: MotionManager?, breathingEngine: BreathingEngine?, captureManager: CaptureManager?) {
             self.touchHandler = touchHandler
             self.settings = settings
             self.motionManager = motionManager
             self.breathingEngine = breathingEngine
+            self.captureManager = captureManager
             super.init()
+        }
+
+        func requestScreenshot(completion: @escaping (UIImage?) -> Void) {
+            renderer?.requestScreenshot(completion: completion)
         }
 
         func updateSettings(_ settings: PlasmaSettings) {

@@ -8,8 +8,6 @@ struct BreathingOverlay: View {
         ZStack {
             if engine.isActive {
                 activeOverlay
-            } else {
-                startButton
             }
         }
     }
@@ -52,34 +50,6 @@ struct BreathingOverlay: View {
             }
         }
         .allowsHitTesting(true)
-    }
-
-    // MARK: - Start Button
-
-    private var startButton: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Button {
-                    let pattern = settings.breathingPattern
-                    let custom = pattern == .custom ? settings.customBreathingDurations : nil
-                    engine.start(
-                        pattern: pattern,
-                        customDurations: custom,
-                        sessionMinutes: settings.breathingSessionMinutes
-                    )
-                } label: {
-                    Image(systemName: "lungs.fill")
-                        .font(.title3)
-                        .foregroundColor(.white.opacity(0.6))
-                        .padding(12)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .padding(.trailing, 16)
-                .padding(.bottom, 40)
-            }
-        }
     }
 
     // MARK: - Helpers

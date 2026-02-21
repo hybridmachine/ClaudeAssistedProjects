@@ -11,14 +11,17 @@ struct ContentView: View {
     @StateObject private var settings = PlasmaSettings()
     @StateObject private var services = AppServices()
     @StateObject private var breathingEngine = BreathingEngine()
+    @StateObject private var captureManager = CaptureManager()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
-            MetalView(touchHandler: touchHandler, settings: settings, motionManager: services.motionManager, breathingEngine: breathingEngine)
+            MetalView(touchHandler: touchHandler, settings: settings, motionManager: services.motionManager, breathingEngine: breathingEngine, captureManager: captureManager)
                 .ignoresSafeArea()
 
             BreathingOverlay(engine: breathingEngine, settings: settings)
+
+            CaptureOverlay(captureManager: captureManager, settings: settings, breathingEngine: breathingEngine, isBreathingActive: breathingEngine.isActive)
 
             SettingsOverlay(settings: settings, isBreathingActive: breathingEngine.isActive)
                 .allowsHitTesting(true)
@@ -36,6 +39,10 @@ struct ContentView: View {
                 // Stop breathing session on background
                 if breathingEngine.isActive {
                     breathingEngine.stop()
+                }
+                // Stop recording on background
+                if captureManager.isRecording {
+                    captureManager.stopRecording()
                 }
             }
         }
