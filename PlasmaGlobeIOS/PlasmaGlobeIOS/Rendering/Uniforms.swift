@@ -18,6 +18,15 @@ struct TouchPoint {
 
 let maxTouchSlots = 5
 
+struct BreathingUniforms {
+    var isActive: Int32 = 0           // 0 or 1
+    var breathingIntensity: Float = 0 // 0=rest, 1=peak inhale
+    var breathPhase: Float = 0        // 0..1 within current state
+    var breathState: Int32 = 0        // matches BreathState raw values
+    var cyclePhase: Float = 0         // 0..1 across full cycle
+    var padding: Float = 0            // align to 24 bytes
+}
+
 struct PlasmaConfig {
     var coreColorA: SIMD4<Float> = SIMD4<Float>(1.0, 0.7, 0.85, 1.0)
     var coreColorB: SIMD4<Float> = SIMD4<Float>(0.85, 0.85, 1.0, 1.0)

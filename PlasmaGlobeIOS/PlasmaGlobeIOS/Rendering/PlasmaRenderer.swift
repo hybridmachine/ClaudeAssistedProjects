@@ -18,6 +18,7 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
     private static let dischargeDuration: CFTimeInterval = 1.5
 
     var plasmaConfig = PlasmaConfig()
+    var breathingUniforms = BreathingUniforms()
     var motionManager: MotionManager?
 
     init?(mtkView: MTKView, touchHandler: TouchHandler) {
@@ -227,6 +228,7 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
             encoder.setFragmentBytes(&plasmaUniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
             encoder.setFragmentBytes(&touchPoints, length: MemoryLayout<TouchPoint>.stride * maxTouchSlots, index: 1)
             encoder.setFragmentBytes(&config, length: MemoryLayout<PlasmaConfig>.stride, index: 2)
+            encoder.setFragmentBytes(&breathingUniforms, length: MemoryLayout<BreathingUniforms>.stride, index: 3)
             encoder.setFragmentTexture(noiseTexture, index: 0)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             encoder.endEncoding()

@@ -9,14 +9,35 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
                                      constant Uniforms &uniforms [[buffer(0)]],
                                      constant TouchPoint *touches [[buffer(1)]],
                                      constant PlasmaConfig &config [[buffer(2)]],
+                                     constant BreathingUniforms &breathing [[buffer(3)]],
                                      texture2d<float> noiseTex [[texture(0)]]) {
 
     constexpr sampler smp(filter::linear, address::repeat);
 
+    // Breathing modulation factors
+    float breathActive = float(breathing.isActive);
+    float bIntensity = breathing.breathingIntensity;
+    float bState = float(breathing.breathState);
+
+    // Speed: much slower during breathing for calm effect
+    float breathSpeedMod = mix(1.0, mix(0.15, 0.3, bIntensity), breathActive);
+    // Brightness: dimmer at rest, brighter at peak
+    float breathBrightMod = mix(1.0, mix(0.6, 1.2, bIntensity), breathActive);
+    // Thickness: thinner at rest, thicker at peak
+    float breathThickMod = mix(1.0, mix(0.8, 1.3, bIntensity), breathActive);
+
+    // Subtle pulse during hold states (states 2 and 4)
+    bool isHoldState = (breathing.breathState == 2 || breathing.breathState == 4);
+    if (isHoldState && breathing.isActive != 0) {
+        float holdPulse = sin(breathing.breathPhase * 6.2832 * 2.0) * 0.03;
+        breathBrightMod += holdPulse;
+        breathThickMod += holdPulse;
+    }
+
     float2 uv = (in.uv * uniforms.resolution - 0.5 * uniforms.resolution) / uniforms.resolution.y;
-    float time = uniforms.time * config.speed;
+    float time = uniforms.time * config.speed * breathSpeedMod;
     int numTendrils = clamp(config.tendrilCount, 1, MAX_TENDRILS);
-    float thickness = config.tendrilThickness;
+    float thickness = config.tendrilThickness * breathThickMod;
 
     // Camera — slow orbit (freezes during touch)
     float camAngle = uniforms.cameraTime * 0.12;
@@ -372,7 +393,17 @@ fragment float4 plasmaGlobeFragment(VertexOut in [[stage_in]],
             }
         }
 
-        color = float3(plasma) * config.brightness + shellColor;
+        // Subtle breathing glow near core
+        if (breathing.isActive != 0) {
+            float r = length(entry);
+            half bg = half(fast::exp(-r * 4.0)) * half(bIntensity * 0.04);
+            half3 breathGlowColor = config.rainbowMode != 0
+                ? half3(0.9h, 0.9h, 1.0h)
+                : half3(config.coreColorB.rgb);
+            plasma += breathGlowColor * bg;
+        }
+
+        color = float3(plasma) * config.brightness * breathBrightMod + shellColor;
 
         if (hitPost) {
             color += postColor;

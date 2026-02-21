@@ -42,6 +42,15 @@ struct PlasmaConfig {
     int rainbowMode;
 };
 
+struct BreathingUniforms {
+    int isActive;
+    float breathingIntensity;
+    float breathPhase;
+    int breathState;
+    float cyclePhase;
+    float padding;
+};
+
 // === Constants ===
 
 constant int MAX_TENDRILS = 20;
