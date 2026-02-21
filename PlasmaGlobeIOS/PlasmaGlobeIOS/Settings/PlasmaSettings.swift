@@ -22,6 +22,15 @@ final class PlasmaSettings: ObservableObject {
     @AppStorage("respawnRate") var respawnRate: Double = 1.0
     @AppStorage("preferredFPS") var preferredFPS: Int = 60
 
+    // Breathing / Meditation
+    @AppStorage("breathingPatternId") var breathingPatternId: String = "box"
+    @AppStorage("breathingSessionMinutes") var breathingSessionMinutes: Int = 5
+    @AppStorage("breathingChimeEnabled") var breathingChimeEnabled: Bool = true
+    @AppStorage("customInhaleDuration") var customInhaleDuration: Double = 4.0
+    @AppStorage("customHoldDuration") var customHoldDuration: Double = 4.0
+    @AppStorage("customExhaleDuration") var customExhaleDuration: Double = 4.0
+    @AppStorage("customHoldAfterExhaleDuration") var customHoldAfterExhaleDuration: Double = 4.0
+
     init() {
         // One-time migration from old selectedThemeId
         let defaults = UserDefaults.standard
@@ -83,6 +92,23 @@ final class PlasmaSettings: ObservableObject {
         case .rainbow:
             return .rainbow
         }
+    }
+
+    var breathingPattern: BreathingPattern {
+        BreathingPattern(rawValue: breathingPatternId) ?? .boxBreathing
+    }
+
+    var sessionDuration: SessionDuration {
+        SessionDuration(rawValue: breathingSessionMinutes) ?? .fiveMinutes
+    }
+
+    var customBreathingDurations: BreathingDurations {
+        BreathingDurations(
+            inhale: customInhaleDuration,
+            hold: customHoldDuration,
+            exhale: customExhaleDuration,
+            holdAfterExhale: customHoldAfterExhaleDuration
+        )
     }
 
     func buildPlasmaConfig() -> PlasmaConfig {

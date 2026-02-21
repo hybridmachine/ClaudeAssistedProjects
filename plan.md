@@ -49,6 +49,14 @@ The flagship new feature — gives users a reason to open the app daily.
 
 ---
 
+## Phase 1.5: Localization
+
+- Add `Localizable.strings` (or `.xcstrings`) for all user-facing strings across the app
+- Covers: settings labels, theme names, breathing labels ("Breathe In"/"Hold"/"Breathe Out"), session duration names, pattern names, discharge sound style names, onboarding text, version display
+- Start with English base; structure allows easy addition of other languages later
+
+---
+
 ## Phase 2: Screenshot & Video Capture + Sharing
 
 ### 2A. Screenshot Capture

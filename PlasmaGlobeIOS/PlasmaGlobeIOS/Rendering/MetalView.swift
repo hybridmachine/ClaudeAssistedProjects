@@ -5,6 +5,7 @@ struct MetalView: UIViewRepresentable {
     @ObservedObject var touchHandler: TouchHandler
     @ObservedObject var settings: PlasmaSettings
     var motionManager: MotionManager?
+    var breathingEngine: BreathingEngine?
 
     func makeUIView(context: Context) -> MTKView {
         let mtkView = MTKView()
@@ -48,10 +49,11 @@ struct MetalView: UIViewRepresentable {
         uiView.isPaused = !touchHandler.isActive
         uiView.preferredFramesPerSecond = settings.preferredFPS
         context.coordinator.updateSettings(settings)
+        context.coordinator.breathingEngine = breathingEngine
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(touchHandler: touchHandler, settings: settings, motionManager: motionManager)
+        Coordinator(touchHandler: touchHandler, settings: settings, motionManager: motionManager, breathingEngine: breathingEngine)
     }
 
     final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate {
@@ -59,11 +61,13 @@ struct MetalView: UIViewRepresentable {
         private let touchHandler: TouchHandler
         private var settings: PlasmaSettings
         private var motionManager: MotionManager?
+        var breathingEngine: BreathingEngine?
 
-        init(touchHandler: TouchHandler, settings: PlasmaSettings, motionManager: MotionManager?) {
+        init(touchHandler: TouchHandler, settings: PlasmaSettings, motionManager: MotionManager?, breathingEngine: BreathingEngine?) {
             self.touchHandler = touchHandler
             self.settings = settings
             self.motionManager = motionManager
+            self.breathingEngine = breathingEngine
             super.init()
         }
 
@@ -80,6 +84,18 @@ struct MetalView: UIViewRepresentable {
 
         func draw(in view: MTKView) {
             ensureRendererInitialized(for: view)
+
+            // Build BreathingUniforms from engine state
+            if let engine = breathingEngine {
+                var bu = BreathingUniforms()
+                bu.isActive = engine.isActive ? 1 : 0
+                bu.breathingIntensity = engine.breathingIntensity
+                bu.breathPhase = engine.breathPhase
+                bu.breathState = Int32(engine.currentState.rawValue)
+                bu.cyclePhase = engine.cyclePhase
+                renderer?.breathingUniforms = bu
+            }
+
             renderer?.draw(in: view)
         }
 

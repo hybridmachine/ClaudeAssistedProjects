@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsOverlay: View {
     @ObservedObject var settings: PlasmaSettings
+    var isBreathingActive: Bool = false
     @State private var isVisible = false
     @State private var hideTimer: Timer?
 
@@ -17,7 +18,7 @@ struct SettingsOverlay: View {
                 } label: {
                     Image(systemName: "gearshape.fill")
                         .font(.title2)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(.white.opacity(isBreathingActive ? 0.3 : 0.7))
                         .padding(12)
                         .background(.ultraThinMaterial, in: Circle())
                 }
@@ -110,6 +111,16 @@ struct SettingsOverlay: View {
                     .tint(.purple)
                 }
             }
+
+            Divider().background(Color.white.opacity(0.2))
+
+            // Breathing / Meditation
+            Text("Breathing")
+                .font(.caption.bold())
+                .foregroundColor(.white.opacity(0.8))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            BreathingSettingsSection(settings: settings, onInteraction: resetHideTimer)
         }
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))

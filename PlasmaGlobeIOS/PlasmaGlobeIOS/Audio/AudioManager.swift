@@ -32,6 +32,8 @@ final class AudioManager {
         var dischargeSoundStyle: Int = 1  // crystallineChime default
         var humFrequency: Float = 60.0
         var dischargeTriggered: Bool = false
+        var breathingActive: Bool = false
+        var breathingIntensity: Float = 0
     }
     private let params = OSAllocatedUnfairLock(initialState: AudioParams())
 
@@ -111,12 +113,24 @@ final class AudioManager {
                 let harmonic2 = AudioManager.fastSin(phase: localHumPhase * 2) * 0.12
                 let harmonic3 = AudioManager.fastSin(phase: localHumPhase * 3) * 0.03
 
-                let mod = 1.0 + AudioManager.fastSin(phase: localHumPhase2) * 0.08
+                var mod = 1.0 + AudioManager.fastSin(phase: localHumPhase2) * 0.08
+
+                // Breathing modulation: volume +-15% with intensity, pitch bend down on exhale
+                if p.breathingActive {
+                    let breathVol = 1.0 + (p.breathingIntensity - 0.5) * 0.30
+                    mod *= breathVol
+                }
+
                 let sample = (fundamental + harmonic2 + harmonic3) * mod * vol
 
                 data[i] = sample
 
-                localHumPhase += p.humFrequency / sr
+                // Pitch bend: lower by up to 3Hz during exhale (low intensity)
+                var freqMod = p.humFrequency
+                if p.breathingActive {
+                    freqMod -= (1.0 - p.breathingIntensity) * 3.0
+                }
+                localHumPhase += freqMod / sr
                 if localHumPhase > 1.0 { localHumPhase -= 1.0 }
                 localHumPhase2 += 0.3 / sr
                 if localHumPhase2 > 1.0 { localHumPhase2 -= 1.0 }
@@ -235,5 +249,22 @@ final class AudioManager {
 
     func setHumFrequency(_ freq: Float) {
         params.withLock { $0.humFrequency = freq }
+    }
+
+    func setBreathingParams(active: Bool, intensity: Float) {
+        params.withLock {
+            $0.breathingActive = active
+            $0.breathingIntensity = intensity
+        }
+    }
+
+    func triggerBreathingChime() {
+        params.withLock {
+            // Only trigger if current envelope is low enough to avoid cutting off a real discharge
+            if $0.dischargeEnvelope < 0.5 {
+                $0.dischargeEnvelope = 0.3
+                $0.dischargeTriggered = true
+            }
+        }
     }
 }
