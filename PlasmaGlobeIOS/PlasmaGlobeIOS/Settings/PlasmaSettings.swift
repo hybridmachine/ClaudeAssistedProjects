@@ -22,6 +22,9 @@ final class PlasmaSettings: ObservableObject {
     @AppStorage("respawnRate") var respawnRate: Double = 1.0
     @AppStorage("preferredFPS") var preferredFPS: Int = 60
 
+    // Capture
+    @AppStorage("recordingDuration") var recordingDurationRaw: Int = 10
+
     // Breathing / Meditation
     @AppStorage("breathingPatternId") var breathingPatternId: String = "box"
     @AppStorage("breathingSessionMinutes") var breathingSessionMinutes: Int = 5
@@ -45,6 +48,10 @@ final class PlasmaSettings: ObservableObject {
             }
             defaults.removeObject(forKey: "selectedThemeId")
         }
+    }
+
+    var recordingDuration: RecordingDuration {
+        RecordingDuration(rawValue: recordingDurationRaw) ?? .tenSeconds
     }
 
     var dischargeSoundStyle: DischargeSoundStyle {

@@ -1,5 +1,6 @@
 import MetalKit
 import Combine
+import UIKit
 
 final class PlasmaRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
@@ -16,6 +17,10 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
 
     private var dischargeStartTime: CFAbsoluteTime?
     private static let dischargeDuration: CFTimeInterval = 1.5
+
+    // Screenshot capture
+    private var captureTexture: MTLTexture?
+    private var captureCompletion: ((UIImage?) -> Void)?
 
     var plasmaConfig = PlasmaConfig()
     var breathingUniforms = BreathingUniforms()
@@ -245,7 +250,85 @@ final class PlasmaRenderer: NSObject, MTKViewDelegate {
             encoder.endEncoding()
         }
 
+        // Screenshot blit: copy drawable to shared-storage texture for CPU readback
+        if let completion = captureCompletion {
+            captureCompletion = nil
+            let captureTex = ensureCaptureTexture(matching: drawable.texture)
+            if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+                blitEncoder.copy(
+                    from: drawable.texture,
+                    sourceSlice: 0,
+                    sourceLevel: 0,
+                    sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                    sourceSize: MTLSize(width: drawable.texture.width, height: drawable.texture.height, depth: 1),
+                    to: captureTex,
+                    destinationSlice: 0,
+                    destinationLevel: 0,
+                    destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+                )
+                blitEncoder.endEncoding()
+            }
+            commandBuffer.addCompletedHandler { _ in
+                let image = Self.textureToUIImage(captureTex)
+                DispatchQueue.main.async {
+                    completion(image)
+                }
+            }
+        }
+
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    // MARK: - Screenshot Capture
+
+    func requestScreenshot(completion: @escaping (UIImage?) -> Void) {
+        captureCompletion = completion
+    }
+
+    private func ensureCaptureTexture(matching source: MTLTexture) -> MTLTexture {
+        if let existing = captureTexture,
+           existing.width == source.width,
+           existing.height == source.height {
+            return existing
+        }
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: source.width,
+            height: source.height,
+            mipmapped: false
+        )
+        desc.usage = [.shaderRead]
+        desc.storageMode = .shared
+        let tex = device.makeTexture(descriptor: desc)!
+        captureTexture = tex
+        return tex
+    }
+
+    private static func textureToUIImage(_ texture: MTLTexture) -> UIImage? {
+        let width = texture.width
+        let height = texture.height
+        let bytesPerRow = width * 4
+        var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
+        texture.getBytes(
+            &pixels,
+            bytesPerRow: bytesPerRow,
+            from: MTLRegionMake2D(0, 0, width, height),
+            mipmapLevel: 0
+        )
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ), let cgImage = context.makeImage() else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 }
