@@ -1,4 +1,5 @@
 using System.Numerics;
+using GameOfLife3D.NET.Camera;
 using GameOfLife3D.NET.Engine;
 using GameOfLife3D.NET.Rendering;
 
@@ -16,26 +17,43 @@ public sealed class EditingController
     private readonly GameEngine _engine;
     private readonly Renderer3D _renderer;
     private readonly GridRayCaster _rayCaster;
+    private readonly CameraController _camera;
+    private CameraState? _preEditCameraState;
+    private bool _preEditAutoOrbit;
 
     public bool IsActive { get; private set; }
     public int BrushSize { get; set; } = 1;
     public EditTool CurrentTool { get; set; } = EditTool.Toggle;
     public int PatternRotation { get; private set; } // 0, 90, 180, 270
 
-    public EditingController(GameEngine engine, Renderer3D renderer, GridRayCaster rayCaster)
+    public EditingController(GameEngine engine, Renderer3D renderer, GridRayCaster rayCaster, CameraController camera)
     {
         _engine = engine;
         _renderer = renderer;
         _rayCaster = rayCaster;
+        _camera = camera;
     }
 
-    public bool TryActivate(bool isPlaying, int displayStart)
+    public bool TryActivate(bool isPlaying, int displayStart, int gridSize)
     {
         // Editing only available when paused and viewing generation 0
         if (isPlaying || displayStart != 0)
             return false;
 
         IsActive = true;
+
+        // Save camera state and snap to top-down view for easy grid editing
+        _preEditCameraState = _camera.GetState();
+        _preEditAutoOrbit = _camera.IsAutoOrbitEnabled;
+        _camera.StopAutoOrbit();
+        _camera.SetState(new CameraState
+        {
+            Target = new Vector3(0, 0, 0),
+            Distance = gridSize * 0.75f,
+            Phi = 0.1f,
+            Theta = 0f,
+        });
+
         return true;
     }
 
@@ -43,6 +61,16 @@ public sealed class EditingController
     {
         IsActive = false;
         _renderer.ClearPreviewCells();
+
+        // Restore camera to pre-edit state
+        if (_preEditCameraState != null)
+        {
+            _camera.SetState(_preEditCameraState);
+            _preEditCameraState = null;
+        }
+
+        if (_preEditAutoOrbit)
+            _camera.StartAutoOrbit();
     }
 
     public void RotatePattern()
