@@ -1,0 +1,106 @@
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background-color: #050505;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#app {
+    height: 100%;
+    display: flex;
+    flex-direction: row;
+}
+
+.sidebar {
+    width: 300px;
+    background: rgba(20, 20, 20, 0.9);
+    border-right: 1px solid #444;
+    padding: 20px;
+    z-index: 10;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.game-container {
+    flex: 1;
+    position: relative;
+    height: 100%;
+}
+
+#game-canvas-container {
+    width: 100%;
+    height: 100%;
+}
+
+h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #00ffff; }
+h2 { font-size: 1rem; margin-top: 1rem; margin-bottom: 0.5rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+button {
+    background: #333;
+    border: 1px solid #555;
+    color: white;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+button:hover { background: #444; border-color: #00ffff; }
+button:active { background: #222; }
+button.primary { background: #006666; border-color: #00aaaa; }
+button.primary:hover { background: #008888; }
+
+.stats {
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: #00ff00;
+    background: #000;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+select, input {
+    background: #222;
+    border: 1px solid #444;
+    color: white;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.loading-progress {
+    position: relative;
+    display: block;
+    width: 8rem;
+    height: 8rem;
+    margin: 20vh auto 1rem auto;
+}
+
+.loading-progress circle {
+    fill: none;
+    stroke: #e0e0e0;
+    stroke-width: 0.6rem;
+    transform-origin: 50% 50%;
+    transform: rotate(-90deg);
+}
+
+.loading-progress circle:last-child {
+    stroke: #1b6ec2;
+    stroke-dasharray: 80 100;
+    stroke-dashoffset: 0;
+    animation: loading-progress-circle 2s linear infinite;
+}
+
+@keyframes loading-progress-circle {
+    0% { stroke-dashoffset: 100; }
+    100% { stroke-dashoffset: -100; }
+}

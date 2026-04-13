@@ -1,0 +1,205 @@
+@page "/"
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="sidebar">
+    <h1>Game of Life 3D</h1>
+    
+    <div class="stats">
+        Gen: @_currentGenIndex / @_engine.GenerationCount<br/>
+        Live: @_liveCellCount
+    </div>
+
+    <div class="control-group">
+        <button class="primary" @onclick="TogglePlay">@(_isPlaying ? "Pause" : "Play")</button>
+        <button @onclick="Step">Step</button>
+        <button @onclick="Reset">Reset Random</button>
+    </div>
+
+    <h2>Simulation</h2>
+    <div class="control-group">
+        <label>Grid Size: @_gridSize</label>
+        <input type="range" min="10" max="100" step="5" value="@_gridSize" @onchange="OnGridSizeChanged" />
+        
+        <label>Rule</label>
+        <select @onchange="OnRuleChanged">
+            @foreach (var rule in RulePresets.All)
+            {
+                <option value="@rule.Key" selected="@(rule.Key == _engine.RuleName)">@rule.Value.Name</option>
+            }
+        </select>
+        
+        <label>Speed (ms)</label>
+        <input type="number" @bind="_tickInterval" min="10" max="1000" step="10" />
+
+        <label>
+            <input type="checkbox" @bind="_toroidal" @bind:after="UpdateEngineSettings" /> Toroidal
+        </label>
+    </div>
+
+    <h2>Appearance</h2>
+    <div class="control-group">
+        <label>History Depth: @_historyDepth</label>
+        <input type="range" min="1" max="100" value="@_historyDepth" @onchange="OnHistoryDepthChanged" />
+    </div>
+</div>
+
+<div class="game-container">
+    <div id="game-canvas-container"></div>
+</div>
+
+@code {
+    private GameEngine _engine = new(50);
+    private int _gridSize = 50;
+    private int _tickInterval = 100;
+    private bool _isPlaying = false;
+    private bool _toroidal = true;
+    private int _currentGenIndex = 0;
+    private int _historyDepth = 30;
+    private int _liveCellCount = 0;
+
+    private IJSObjectReference? _module;
+    private CancellationTokenSource? _timerCts;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/game-renderer.js");
+            await _module.InvokeVoidAsync("init", "game-canvas-container", _gridSize);
+            
+            Reset();
+        }
+    }
+
+    private void Reset()
+    {
+        _engine.SetGridSize(_gridSize);
+        _engine.InitializeRandom(0.15f);
+        _currentGenIndex = 0;
+        UpdateRenderer();
+        StateHasChanged();
+    }
+
+    private void Step()
+    {
+        if (_engine.ComputeSingleGeneration())
+        {
+            _currentGenIndex = _engine.GenerationCount - 1;
+            UpdateRenderer();
+        }
+        else if (_engine.GenerationCount >= 1000)
+        {
+            _isPlaying = false;
+        }
+    }
+
+    private void TogglePlay()
+    {
+        _isPlaying = !_isPlaying;
+        if (_isPlaying) StartTimer();
+        else StopTimer();
+    }
+
+    private void StartTimer()
+    {
+        _timerCts?.Cancel();
+        _timerCts = new CancellationTokenSource();
+        _ = TimerLoop(_timerCts.Token);
+    }
+
+    private void StopTimer()
+    {
+        _timerCts?.Cancel();
+    }
+
+    private async Task TimerLoop(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            if (_isPlaying)
+            {
+                Step();
+                StateHasChanged();
+            }
+            try 
+            {
+                await Task.Delay(_tickInterval, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    private void UpdateRenderer()
+    {
+        if (_module == null) return;
+
+        // Prepare data for Three.js: Float32Array [x, y, z, t, ...]
+        // We show history up to _historyDepth
+        var instances = new List<float>();
+        int startGen = Math.Max(0, _currentGenIndex - _historyDepth + 1);
+        
+        _liveCellCount = 0;
+        for (int i = startGen; i <= _currentGenIndex; i++)
+        {
+            var gen = _engine.GetGeneration(i);
+            if (gen == null) continue;
+
+            float t = (float)(i - startGen) / Math.Max(1, _currentGenIndex - startGen);
+            if (_currentGenIndex == startGen) t = 1.0f;
+
+            foreach (var cell in gen.LiveCells)
+            {
+                instances.Add(cell.X - _gridSize / 2f);
+                instances.Add(i - _currentGenIndex); // Z is time/generation
+                instances.Add(cell.Y - _gridSize / 2f);
+                instances.Add(t);
+                _liveCellCount++;
+            }
+        }
+
+        _ = _module.InvokeVoidAsync("updateInstances", instances.ToArray());
+    }
+
+    private void OnGridSizeChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int newSize))
+        {
+            _gridSize = newSize;
+            Reset();
+        }
+    }
+
+    private void OnHistoryDepthChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int newDepth))
+        {
+            _historyDepth = newDepth;
+            UpdateRenderer();
+        }
+    }
+
+    private void OnRuleChanged(ChangeEventArgs e)
+    {
+        string? rule = e.Value?.ToString();
+        if (rule != null)
+        {
+            _engine.SetRule(rule);
+            Reset();
+        }
+    }
+
+    private void UpdateEngineSettings()
+    {
+        _engine.SetToroidal(_toroidal);
+    }
+
+    public void Dispose()
+    {
+        _timerCts?.Cancel();
+        _timerCts?.Dispose();
+    }
+}
