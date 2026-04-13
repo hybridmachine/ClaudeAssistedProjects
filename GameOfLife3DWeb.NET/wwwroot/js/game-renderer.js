@@ -4,30 +4,30 @@ import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/cont
 let scene, camera, renderer, controls;
 let instancedMesh;
 let gridHelper;
-let dummy = new THREE.Object3D();
-let maxInstances = 1000000;
+const dummy = new THREE.Object3D();
+const maxInstances = 1000000;
 let gridSize = 50;
+let containerElement;
+let resizeHandler;
+let animationFrameId;
 
 export function init(containerId, initialGridSize) {
-    gridSize = initialGridSize;
-    const container = document.getElementById(containerId);
-    if (!container) return;
+    dispose();
 
-    // Clean up if re-initializing
-    if (renderer) {
-        container.removeChild(renderer.domElement);
-    }
+    gridSize = initialGridSize;
+    containerElement = document.getElementById(containerId);
+    if (!containerElement) return;
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x050505);
 
-    camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 2000);
+    camera = new THREE.PerspectiveCamera(75, containerElement.clientWidth / containerElement.clientHeight, 0.1, 2000);
     camera.position.set(gridSize, gridSize, gridSize * 1.5);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    container.appendChild(renderer.domElement);
+    renderer.setSize(containerElement.clientWidth, containerElement.clientHeight);
+    containerElement.appendChild(renderer.domElement);
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -42,11 +42,13 @@ export function init(containerId, initialGridSize) {
     initInstancedMesh();
     updateGrid(gridSize);
 
-    window.addEventListener('resize', () => {
-        camera.aspect = container.clientWidth / container.clientHeight;
+    resizeHandler = () => {
+        if (!camera || !renderer || !containerElement) return;
+        camera.aspect = containerElement.clientWidth / containerElement.clientHeight;
         camera.updateProjectionMatrix();
-        renderer.setSize(container.clientWidth, container.clientHeight);
-    });
+        renderer.setSize(containerElement.clientWidth, containerElement.clientHeight);
+    };
+    window.addEventListener('resize', resizeHandler);
 
     animate();
 }
@@ -65,14 +67,38 @@ function initInstancedMesh() {
 }
 
 function updateGrid(size) {
-    if (gridHelper) scene.remove(gridHelper);
+    if (!scene) return;
+
+    if (gridHelper) {
+        scene.remove(gridHelper);
+        gridHelper.geometry.dispose();
+        disposeMaterial(gridHelper.material);
+    }
+
     gridHelper = new THREE.GridHelper(size, size, 0x444444, 0x222222);
     gridHelper.position.y = 0.5; // Slightly below the first layer
     scene.add(gridHelper);
 }
 
+export function setGridSize(size) {
+    gridSize = size;
+    updateGrid(size);
+
+    if (!camera) return;
+
+    camera.position.set(size, size, size * 1.5);
+    camera.lookAt(0, 0, 0);
+
+    if (controls) {
+        controls.target.set(0, 0, 0);
+        controls.update();
+    }
+}
+
 export function updateInstances(instances) {
-    const count = instances.length / 4;
+    if (!instancedMesh) return;
+
+    const count = Math.min(instances.length / 4, maxInstances);
     const color = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
@@ -97,7 +123,63 @@ export function updateInstances(instances) {
 }
 
 function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
+    if (!renderer || !scene || !camera) return;
+
+    animationFrameId = requestAnimationFrame(animate);
+    if (controls) controls.update();
     renderer.render(scene, camera);
+}
+
+export function dispose() {
+    if (animationFrameId !== undefined) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = undefined;
+    }
+
+    if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+        resizeHandler = undefined;
+    }
+
+    if (scene && gridHelper) {
+        scene.remove(gridHelper);
+        gridHelper.geometry.dispose();
+        disposeMaterial(gridHelper.material);
+        gridHelper = undefined;
+    }
+
+    if (scene && instancedMesh) {
+        scene.remove(instancedMesh);
+        instancedMesh.geometry.dispose();
+        disposeMaterial(instancedMesh.material);
+        instancedMesh = undefined;
+    }
+
+    if (controls) {
+        controls.dispose();
+        controls = undefined;
+    }
+
+    if (renderer) {
+        renderer.dispose();
+        if (containerElement && renderer.domElement.parentElement === containerElement) {
+            containerElement.removeChild(renderer.domElement);
+        }
+        renderer = undefined;
+    }
+
+    scene = undefined;
+    camera = undefined;
+    containerElement = undefined;
+}
+
+function disposeMaterial(material) {
+    if (Array.isArray(material)) {
+        for (const entry of material) {
+            entry.dispose();
+        }
+        return;
+    }
+
+    material.dispose();
 }

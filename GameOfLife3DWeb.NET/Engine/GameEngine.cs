@@ -253,6 +253,17 @@ public sealed class GameEngine
 
     private static bool[,] DeserializeGrid(bool[] flat, int size)
     {
+        if (size <= 0)
+            throw new ArgumentOutOfRangeException(nameof(size), "Grid size must be positive.");
+
+        int expectedLength = checked(size * size);
+        if (flat.Length != expectedLength)
+        {
+            throw new ArgumentException(
+                $"Serialized grid length ({flat.Length}) does not match expected size ({expectedLength}) for a {size}x{size} grid.",
+                nameof(flat));
+        }
+
         var grid = new bool[size, size];
         for (int x = 0; x < size; x++)
             for (int y = 0; y < size; y++)

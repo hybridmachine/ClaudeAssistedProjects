@@ -1,6 +1,6 @@
 @page "/"
 @inject IJSRuntime JS
-@implements IDisposable
+@implements IAsyncDisposable
 
 <div class="sidebar">
     <h1>Game of Life 3D</h1>
@@ -12,8 +12,8 @@
 
     <div class="control-group">
         <button class="primary" @onclick="TogglePlay">@(_isPlaying ? "Pause" : "Play")</button>
-        <button @onclick="Step">Step</button>
-        <button @onclick="Reset">Reset Random</button>
+        <button @onclick="StepAsync">Step</button>
+        <button @onclick="ResetAsync">Reset Random</button>
     </div>
 
     <h2>Simulation</h2>
@@ -68,29 +68,30 @@
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/game-renderer.js");
             await _module.InvokeVoidAsync("init", "game-canvas-container", _gridSize);
             
-            Reset();
+            await ResetAsync();
         }
     }
 
-    private void Reset()
+    private async Task ResetAsync()
     {
         _engine.SetGridSize(_gridSize);
         _engine.InitializeRandom(0.15f);
         _currentGenIndex = 0;
-        UpdateRenderer();
+        await UpdateRendererAsync();
         StateHasChanged();
     }
 
-    private void Step()
+    private async Task StepAsync()
     {
         if (_engine.ComputeSingleGeneration())
         {
             _currentGenIndex = _engine.GenerationCount - 1;
-            UpdateRenderer();
+            await UpdateRendererAsync();
         }
         else if (_engine.GenerationCount >= 1000)
         {
             _isPlaying = false;
+            StopTimer();
         }
     }
 
@@ -119,8 +120,11 @@
         {
             if (_isPlaying)
             {
-                Step();
-                StateHasChanged();
+                await InvokeAsync(async () =>
+                {
+                    await StepAsync();
+                    StateHasChanged();
+                });
             }
             try 
             {
@@ -133,7 +137,7 @@
         }
     }
 
-    private void UpdateRenderer()
+    private async Task UpdateRendererAsync()
     {
         if (_module == null) return;
 
@@ -161,34 +165,39 @@
             }
         }
 
-        _ = _module.InvokeVoidAsync("updateInstances", instances.ToArray());
+        await _module.InvokeVoidAsync("updateInstances", instances.ToArray());
     }
 
-    private void OnGridSizeChanged(ChangeEventArgs e)
+    private async Task OnGridSizeChanged(ChangeEventArgs e)
     {
         if (int.TryParse(e.Value?.ToString(), out int newSize))
         {
             _gridSize = newSize;
-            Reset();
+            if (_module != null)
+            {
+                await _module.InvokeVoidAsync("setGridSize", _gridSize);
+            }
+
+            await ResetAsync();
         }
     }
 
-    private void OnHistoryDepthChanged(ChangeEventArgs e)
+    private async Task OnHistoryDepthChanged(ChangeEventArgs e)
     {
         if (int.TryParse(e.Value?.ToString(), out int newDepth))
         {
             _historyDepth = newDepth;
-            UpdateRenderer();
+            await UpdateRendererAsync();
         }
     }
 
-    private void OnRuleChanged(ChangeEventArgs e)
+    private async Task OnRuleChanged(ChangeEventArgs e)
     {
         string? rule = e.Value?.ToString();
         if (rule != null)
         {
             _engine.SetRule(rule);
-            Reset();
+            await ResetAsync();
         }
     }
 
@@ -197,9 +206,17 @@
         _engine.SetToroidal(_toroidal);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        _timerCts?.Cancel();
+        StopTimer();
         _timerCts?.Dispose();
+        _timerCts = null;
+
+        if (_module != null)
+        {
+            await _module.InvokeVoidAsync("dispose");
+            await _module.DisposeAsync();
+            _module = null;
+        }
     }
 }
