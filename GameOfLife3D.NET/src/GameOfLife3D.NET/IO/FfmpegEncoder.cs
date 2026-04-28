@@ -1,0 +1,315 @@
+using System.Buffers;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text;
+
+namespace GameOfLife3D.NET.IO;
+
+// Spawns ffmpeg and pipes raw RGBA frames into its stdin via a background writer thread,
+// so encoder latency does not stall the render loop. The producer (WriteFrame) only blocks
+// when the queue is full — natural back-pressure if ffmpeg can't keep up.
+// Discovery order: PATH → common install locations.
+public sealed class FfmpegEncoder : IVideoEncoder
+{
+    // Bounded queue: at 1080p RGBA each frame is ~8 MB, so capacity 4 = ~32 MB high-water mark.
+    private const int QueueCapacity = 4;
+
+    private readonly Process _process;
+    private readonly Stream _stdin;
+    private readonly StringBuilder _stderrTail = new();
+    private readonly Task _stderrTask;
+    private readonly Task _writerTask;
+    private readonly BlockingCollection<QueuedFrame> _queue = new(QueueCapacity);
+    private readonly string _outputPath;
+    private readonly int _width;
+    private readonly int _height;
+    private readonly int _frameByteCount;
+    private volatile bool _cancelRequested;
+
+    public bool IsHealthy { get; private set; } = true;
+    public string? LastError { get; private set; }
+
+    public FfmpegEncoder(string ffmpegPath, VideoCodec codec, int width, int height, int fps, string outputPath)
+    {
+        if (codec is not (VideoCodec.Vp9Webm or VideoCodec.H264Mp4))
+            throw new ArgumentException($"FfmpegEncoder doesn't support {codec}.", nameof(codec));
+        if (string.IsNullOrWhiteSpace(ffmpegPath))
+            throw new ArgumentException("ffmpeg path must be provided.", nameof(ffmpegPath));
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), width, "Width must be positive.");
+        if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height), height, "Height must be positive.");
+        if (fps <= 0) throw new ArgumentOutOfRangeException(nameof(fps), fps, "Fps must be positive.");
+        if (string.IsNullOrWhiteSpace(outputPath))
+            throw new ArgumentException("Output path must be provided.", nameof(outputPath));
+
+        _outputPath = outputPath;
+        _width = width;
+        _height = height;
+        _frameByteCount = checked(width * height * 4);
+        string args = BuildArgs(codec, width, height, fps, outputPath);
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = ffmpegPath,
+            Arguments = args,
+            RedirectStandardInput = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = false,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        _process = Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start ffmpeg: {ffmpegPath}");
+        _stdin = _process.StandardInput.BaseStream;
+
+        // Drain stderr on a background task so the pipe never blocks.
+        _stderrTask = Task.Run(async () =>
+        {
+            var buf = new byte[4096];
+            int n;
+            try
+            {
+                while ((n = await _process.StandardError.BaseStream.ReadAsync(buf)) > 0)
+                {
+                    lock (_stderrTail)
+                    {
+                        _stderrTail.Append(Encoding.UTF8.GetString(buf, 0, n));
+                        // Keep only the last ~4 KB for diagnostics.
+                        if (_stderrTail.Length > 4096)
+                            _stderrTail.Remove(0, _stderrTail.Length - 4096);
+                    }
+                }
+            }
+            catch { /* process exited */ }
+        });
+
+        // Writer thread: drains the queue into ffmpeg's stdin so the render loop never blocks on encoding.
+        _writerTask = Task.Factory.StartNew(WriterLoop,
+            TaskCreationOptions.LongRunning).Unwrap();
+    }
+
+    private readonly record struct QueuedFrame(byte[] Buffer, int ByteCount);
+
+    private async Task WriterLoop()
+    {
+        try
+        {
+            foreach (var frame in _queue.GetConsumingEnumerable())
+            {
+                if (_cancelRequested)
+                {
+                    ArrayPool<byte>.Shared.Return(frame.Buffer);
+                    continue;
+                }
+                try
+                {
+                    await _stdin.WriteAsync(frame.Buffer.AsMemory(0, frame.ByteCount)).ConfigureAwait(false);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(frame.Buffer);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            IsHealthy = false;
+            LastError = $"ffmpeg pipe broken: {ex.Message}\n{StderrTail()}";
+            // Drain remaining frames so the producer doesn't block forever; mark queue complete.
+            try { _queue.CompleteAdding(); } catch { }
+            DrainAndReturn();
+        }
+    }
+
+    private void DrainAndReturn()
+    {
+        try
+        {
+            while (_queue.TryTake(out var frame))
+                ArrayPool<byte>.Shared.Return(frame.Buffer);
+        }
+        catch { }
+    }
+
+    public void WriteFrame(byte[] buffer, int byteCount)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        if (byteCount != _frameByteCount)
+            throw new ArgumentException($"Frame byte count {byteCount} does not match expected {_frameByteCount}.", nameof(byteCount));
+        if (!IsHealthy)
+        {
+            // Producer surrendered ownership; return immediately so we don't leak the pooled buffer.
+            ArrayPool<byte>.Shared.Return(buffer);
+            throw new InvalidOperationException(LastError ?? "ffmpeg encoder not healthy.");
+        }
+        try
+        {
+            _queue.Add(new QueuedFrame(buffer, byteCount));
+        }
+        catch (InvalidOperationException)
+        {
+            // Queue was completed (writer hit an error). Return the buffer and surface the cause.
+            ArrayPool<byte>.Shared.Return(buffer);
+            throw new IOException(LastError ?? "ffmpeg encoder closed.");
+        }
+    }
+
+    public void Finish()
+    {
+        // Signal "no more frames" — writer drains then exits.
+        try { _queue.CompleteAdding(); } catch { }
+        try { _writerTask.Wait(30_000); } catch { }
+
+        try { _stdin.Close(); } catch { }
+        if (!_process.WaitForExit(30_000))
+        {
+            try { _process.Kill(entireProcessTree: true); } catch { }
+            IsHealthy = false;
+            LastError = "ffmpeg did not exit within 30s.";
+            throw new IOException(LastError);
+        }
+        try { _stderrTask.Wait(2_000); } catch { }
+        if (_process.ExitCode != 0)
+        {
+            IsHealthy = false;
+            LastError = $"ffmpeg exited with code {_process.ExitCode}: {StderrTail()}";
+            throw new IOException(LastError);
+        }
+    }
+
+    public void Cancel()
+    {
+        IsHealthy = false;
+        _cancelRequested = true;
+        try { _queue.CompleteAdding(); } catch { }
+        DrainAndReturn();
+        try { _process.Kill(entireProcessTree: true); } catch { }
+        try { _stdin.Close(); } catch { }
+        try { _writerTask.Wait(2_000); } catch { }
+        try { _process.WaitForExit(2_000); } catch { }
+        try { File.Delete(_outputPath); } catch { }
+    }
+
+    public void Dispose()
+    {
+        try { _queue.Dispose(); } catch { }
+        try { _stdin.Dispose(); } catch { }
+        try { _process.Dispose(); } catch { }
+    }
+
+    private string StderrTail()
+    {
+        lock (_stderrTail) return _stderrTail.ToString();
+    }
+
+    private static string BuildArgs(VideoCodec codec, int w, int h, int fps, string output)
+    {
+        // Common input: raw RGBA frames on stdin. Matches PostProcessPipeline.ReadFinalPixels output exactly.
+        string input = $"-y -hide_banner -loglevel warning -f rawvideo -pix_fmt rgba -s {w}x{h} -r {fps} -i -";
+        // Encoder presets are tuned for low CPU cost so encoding doesn't stall the render thread.
+        // ultrafast / realtime trade ~30% file size for ~5–10× faster encoding.
+        string videoArgs = codec switch
+        {
+            VideoCodec.Vp9Webm => "-c:v libvpx-vp9 -pix_fmt yuv420p -b:v 0 -crf 32 -deadline realtime -cpu-used 8 -row-mt 1 -threads 0",
+            VideoCodec.H264Mp4 => "-c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 20 -movflags +faststart",
+            _ => throw new ArgumentOutOfRangeException(nameof(codec)),
+        };
+        return $"{input} {videoArgs} -an \"{output}\"";
+    }
+
+    // ─── Discovery / capability detection ──────────────────────────────────────
+
+    private static bool? _libx264Cached;
+    private static string? _probedBinaryPath;
+
+    public static string? LocateBinary()
+    {
+        string name = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+
+        // 1. PATH.
+        string pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var dir in pathVar.Split(Path.PathSeparator))
+        {
+            if (string.IsNullOrWhiteSpace(dir)) continue;
+            string candidate = Path.Combine(dir, name);
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        // 2. Common install locations not always on PATH inside .app bundles / launchd contexts.
+        string[] extras = OperatingSystem.IsMacOS()
+            ? new[] { "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg" }
+            : OperatingSystem.IsLinux()
+                ? new[] { "/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg" }
+                : Array.Empty<string>();
+        foreach (var p in extras) if (File.Exists(p)) return p;
+
+        return null;
+    }
+
+    // Platform-specific install hint shown in the UI when no ffmpeg is detected.
+    public static string InstallInstructions()
+    {
+        if (OperatingSystem.IsMacOS())
+            return "ffmpeg is not installed.\n\nInstall with Homebrew:\n  brew install ffmpeg\n\nThen restart GameOfLife3D.NET to enable video recording.";
+        if (OperatingSystem.IsWindows())
+            return "ffmpeg is not installed.\n\nInstall with winget:\n  winget install ffmpeg\n\nor download from https://ffmpeg.org/download.html and add it to your PATH.\n\nThen restart GameOfLife3D.NET to enable video recording.";
+        if (OperatingSystem.IsLinux())
+            return "ffmpeg is not installed.\n\nInstall with your package manager, e.g.:\n  sudo apt install ffmpeg\n  sudo dnf install ffmpeg\n\nThen restart GameOfLife3D.NET to enable video recording.";
+        return "ffmpeg is not installed. Install it from https://ffmpeg.org/download.html and restart GameOfLife3D.NET to enable video recording.";
+    }
+
+    // Probes `ffmpeg -encoders` for libx264. Result is cached per binary path.
+    // Uses async output draining + WaitForExit(timeout) so a stalled or chatty ffmpeg can't hang the UI.
+    public static bool SupportsLibx264(string ffmpegPath)
+    {
+        if (_libx264Cached is bool cached && _probedBinaryPath == ffmpegPath) return cached;
+
+        bool found = false;
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = ffmpegPath,
+                Arguments = "-hide_banner -encoders",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var p = Process.Start(psi)!;
+
+            // Drain stdout/stderr asynchronously so the pipes never fill (which would deadlock the process).
+            var stdoutSb = new StringBuilder();
+            var stderrSb = new StringBuilder();
+            p.OutputDataReceived += (_, e) => { if (e.Data != null) lock (stdoutSb) stdoutSb.AppendLine(e.Data); };
+            p.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (stderrSb) stderrSb.AppendLine(e.Data); };
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+
+            if (!p.WaitForExit(3_000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { }
+                try { p.WaitForExit(1_000); } catch { }
+            }
+            else
+            {
+                lock (stdoutSb) found = stdoutSb.ToString().Contains("libx264", StringComparison.Ordinal);
+            }
+        }
+        catch
+        {
+            found = false;
+        }
+
+        _libx264Cached = found;
+        _probedBinaryPath = ffmpegPath;
+        return found;
+    }
+
+    public static string CodecExtension(VideoCodec codec) => codec switch
+    {
+        VideoCodec.Vp9Webm => ".webm",
+        VideoCodec.H264Mp4 => ".mp4",
+        _ => throw new ArgumentOutOfRangeException(nameof(codec)),
+    };
+}

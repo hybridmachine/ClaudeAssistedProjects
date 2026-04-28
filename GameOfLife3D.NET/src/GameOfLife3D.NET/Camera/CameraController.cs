@@ -211,6 +211,7 @@ public sealed class CameraController
         int waypointCount = path.PositionWaypoints.Count;
         if (waypointCount < 2) { StopFlythrough(); return; }
 
+        // Uniformly spaced waypoints across [0, TotalDuration].
         float normalizedT = Math.Clamp(_flythroughTime / path.TotalDuration, 0f, 1f);
         float segmentFloat = normalizedT * (waypointCount - 1);
         int segmentIndex = (int)segmentFloat;
