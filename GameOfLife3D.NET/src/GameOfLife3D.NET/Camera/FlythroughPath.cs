@@ -6,6 +6,7 @@ public sealed class FlythroughPath
 {
     public IReadOnlyList<Vector3> PositionWaypoints { get; }
     public IReadOnlyList<Vector3> LookAtWaypoints { get; }
+
     public float TotalDuration { get; }
 
     public FlythroughPath(List<Vector3> positionWaypoints, List<Vector3> lookAtWaypoints, float totalDuration)
